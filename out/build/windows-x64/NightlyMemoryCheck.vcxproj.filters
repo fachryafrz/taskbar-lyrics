@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="F:\Projects\taskbar-lyrics\out\build\windows-x64\CMakeFiles\0e27a25d000d98afef980d223fea8e98\NightlyMemoryCheck.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="F:\Projects\taskbar-lyrics\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="F:\Projects\taskbar-lyrics\out\build\windows-x64\CMakeFiles\NightlyMemoryCheck" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{D76F08CC-B501-30E6-9A14-20D171127161}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,10 @@
+F:/Projects/taskbar-lyrics/out/build/windows-x64/CMakeFiles/taskbar_lyrics_core.dir
+F:/Projects/taskbar-lyrics/out/build/windows-x64/CMakeFiles/taskbar-lyrics.dir
+F:/Projects/taskbar-lyrics/out/build/windows-x64/CMakeFiles/Experimental.dir
+F:/Projects/taskbar-lyrics/out/build/windows-x64/CMakeFiles/Nightly.dir
+F:/Projects/taskbar-lyrics/out/build/windows-x64/CMakeFiles/Continuous.dir
+F:/Projects/taskbar-lyrics/out/build/windows-x64/CMakeFiles/NightlyMemoryCheck.dir
+F:/Projects/taskbar-lyrics/out/build/windows-x64/CMakeFiles/taskbar_lyrics_tests.dir
+F:/Projects/taskbar-lyrics/out/build/windows-x64/CMakeFiles/RUN_TESTS.dir
+F:/Projects/taskbar-lyrics/out/build/windows-x64/CMakeFiles/ALL_BUILD.dir
+F:/Projects/taskbar-lyrics/out/build/windows-x64/CMakeFiles/ZERO_CHECK.dir

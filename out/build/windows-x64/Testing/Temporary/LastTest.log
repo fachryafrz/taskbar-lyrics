@@ -1,0 +1,18 @@
+Start testing: Nov 04 16:17 SE Asia Standard Time
+----------------------------------------------------------
+1/1 Testing: taskbar_lyrics_tests
+1/1 Test: taskbar_lyrics_tests
+Command: "F:/Projects/taskbar-lyrics/out/build/windows-x64/Debug/taskbar_lyrics_tests.exe"
+Directory: F:/Projects/taskbar-lyrics/out/build/windows-x64
+"taskbar_lyrics_tests" start time: Nov 04 16:17 SE Asia Standard Time
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.02 sec
+----------------------------------------------------------
+Test Passed.
+"taskbar_lyrics_tests" end time: Nov 04 16:17 SE Asia Standard Time
+"taskbar_lyrics_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Nov 04 16:17 SE Asia Standard Time

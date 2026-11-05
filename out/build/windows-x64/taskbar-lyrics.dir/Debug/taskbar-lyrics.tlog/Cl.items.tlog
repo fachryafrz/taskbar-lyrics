@@ -1,9 +1,0 @@
-F:\Projects\taskbar-lyrics\src\main.cpp;F:\Projects\taskbar-lyrics\out\build\windows-x64\taskbar-lyrics.dir\Debug\main.obj
-F:\Projects\taskbar-lyrics\src\app\Application.cpp;F:\Projects\taskbar-lyrics\out\build\windows-x64\taskbar-lyrics.dir\Debug\Application.obj
-F:\Projects\taskbar-lyrics\src\app\TrayManager.cpp;F:\Projects\taskbar-lyrics\out\build\windows-x64\taskbar-lyrics.dir\Debug\TrayManager.obj
-F:\Projects\taskbar-lyrics\src\media\MediaSessionWorker.cpp;F:\Projects\taskbar-lyrics\out\build\windows-x64\taskbar-lyrics.dir\Debug\MediaSessionWorker.obj
-F:\Projects\taskbar-lyrics\src\lyrics\LyricsProvider.cpp;F:\Projects\taskbar-lyrics\out\build\windows-x64\taskbar-lyrics.dir\Debug\LyricsProvider.obj
-F:\Projects\taskbar-lyrics\src\core\ConfigManager.cpp;F:\Projects\taskbar-lyrics\out\build\windows-x64\taskbar-lyrics.dir\Debug\ConfigManager.obj
-F:\Projects\taskbar-lyrics\src\ui\LyricsRenderer.cpp;F:\Projects\taskbar-lyrics\out\build\windows-x64\taskbar-lyrics.dir\Debug\LyricsRenderer.obj
-F:\Projects\taskbar-lyrics\src\ui\LyricsWindow.cpp;F:\Projects\taskbar-lyrics\out\build\windows-x64\taskbar-lyrics.dir\Debug\LyricsWindow.obj
-F:\Projects\taskbar-lyrics\src\ui\TaskbarManager.cpp;F:\Projects\taskbar-lyrics\out\build\windows-x64\taskbar-lyrics.dir\Debug\TaskbarManager.obj

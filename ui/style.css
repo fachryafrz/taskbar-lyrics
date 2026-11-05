@@ -1,0 +1,100 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+html, body {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: transparent !important;
+  background-color: transparent !important;
+  font-family: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  color: #FFFFFF;
+}
+
+.overlay-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  background: transparent !important;
+  cursor: grab;
+}
+
+.overlay-container.locked {
+  cursor: default !important;
+}
+
+.overlay-container.dragging {
+  cursor: grabbing !important;
+}
+
+.album-art-slot {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.album-art-slot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
+  display: block;
+}
+
+.lyric-slot {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  padding: 2px 0;
+}
+
+@keyframes lyricFadeUp {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  35% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.lyric {
+  font-size: 13px;
+  font-weight: 600;
+  color: #FFFFFF;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  line-height: 1.25;
+  padding-bottom: 2px;
+  will-change: transform, opacity;
+}
+
+.lyric.fade-up {
+  animation: lyricFadeUp 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.hidden {
+  display: none !important;
+}

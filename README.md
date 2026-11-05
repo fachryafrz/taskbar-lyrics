@@ -1,26 +1,41 @@
-# Taskbar Lyrics
+# Lyrix (Taskbar Lyrics)
 
-Native Windows 11 C++20 taskbar-adjacent lyric overlay. It is intentionally compact: album-art space, track title, artist, and the active lyric.
+Native Windows 11 taskbar-adjacent lyric overlay built with **Tauri v2 (Rust + Web Frontend)**. It is intentionally compact: album art, track title, artist, and the active synchronized lyric.
 
-## Current foundation
+## Features
 
-- Win32 controller, system-tray Show/Hide and Exit commands, and clean message-loop shutdown.
-- Direct2D/DirectWrite overlay positioned next to the taskbar without taking keyboard focus or mouse input.
-- Local configuration in `%LOCALAPPDATA%\TaskbarLyrics\config.json`.
-- Windows media-session detection for track title, artist, and playback position.
-- LRCLIB retrieval on a worker thread, with an in-memory cache for tracks seen during this run.
-- Pure LRC parsing and playback-clock synchronization, each covered by CTest tests.
+- **Windows Media Session (GSMTC):** Real-time playback detection (Spotify, Apple Music, YouTube/browsers) with cover art extraction.
+- **Synchronized Lyrics:** Automatic fetching from LRCLIB with in-memory and local disk caching (`%LOCALAPPDATA%\Lyrix\lyrics_cache\`).
+- **LRC Sync Engine:** Millisecond-accurate timestamp interpolation with user offset adjustment.
+- **Taskbar Docking:** Native AppBar positioning next to the Windows 11 taskbar without taking focus or stealing keyboard input (`WS_EX_NOACTIVATE`, `WS_EX_TOOLWINDOW`, `WS_EX_LAYERED`).
+- **System Tray Controls:** Native tray menu to toggle visibility, lock/unlock position, wrap lyrics, toggle always-on-top, and reset position.
+- **Minimalist Web UI:** Clean, translucent Segoe UI design with smooth crossfading lyric transitions.
 
-The square at the left is still a placeholder for album art. Lyrics are shown only when LRCLIB returns synchronized lyrics for the detected title and artist. The overlay reports missing lyrics, instrumental tracks, and network failures in its lyric line. Persistent disk cache and album-art rendering remain future work.
+## Project Structure
 
-## Build
+- `src-tauri/`: Rust backend handling WinRT GSMTC, Win32 window styles, LRC sync engine, and system tray.
+- `ui/`: Lightweight frontend (HTML, CSS, JavaScript) embedded directly into the binary.
 
-Open a **Visual Studio 2022 Developer PowerShell** with the Windows 11 SDK installed:
+## Development & Build
 
+### Prerequisites
+- [Rust](https://www.rust-lang.org/) (Cargo & rustc)
+- Windows 10/11 with WebView2 Runtime (installed by default on Windows)
+
+### Run & Test
+
+Run unit tests:
 ```powershell
-cmake --preset windows-x64
-cmake --build --preset windows-x64-debug
-ctest --preset windows-x64-debug
+cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-The executable is generated under `out/build/windows-x64/Debug/`.
+Run in development mode:
+```powershell
+cargo run --manifest-path src-tauri/Cargo.toml
+```
+
+Build release binary:
+```powershell
+cargo build --release --manifest-path src-tauri/Cargo.toml
+```
+The optimized executable will be located at `src-tauri/target/release/lyrix.exe`.

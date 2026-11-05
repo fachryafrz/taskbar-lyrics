@@ -40,6 +40,10 @@ Makefile
 *.log
 *.tmp
 
+# Rust / Cargo
+target/
+src-tauri/target/
+
 # IDE / Editor
 .vscode/
 .idea/

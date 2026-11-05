@@ -107,6 +107,7 @@ LRESULT Application::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
                     TrayManager::kWrapLyricsCommand, L"Wrap Long Lyrics");
         AppendMenuW(menu, MF_STRING | (config_.alwaysOnTop ? MF_CHECKED : MF_UNCHECKED),
                     TrayManager::kAlwaysOnTopCommand, L"Always on top");
+        AppendMenuW(menu, MF_STRING, TrayManager::kResetPositionCommand, L"Reset Position");
         AppendMenuW(menu, MF_STRING, TrayManager::kStatusCommand, L"Status...");
         AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
         AppendMenuW(menu, MF_STRING, TrayManager::kExitCommand, L"Exit");
@@ -145,6 +146,13 @@ LRESULT Application::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         case TrayManager::kAlwaysOnTopCommand:
             config_.alwaysOnTop = !config_.alwaysOnTop;
             lyricsWindow_.SetAlwaysOnTop(config_.alwaysOnTop);
+            configManager_.Save(config_);
+            return 0;
+        case TrayManager::kResetPositionCommand:
+            config_.taskbarOffsetX = 180;
+            config_.taskbarOffsetY = 0;
+            lyricsWindow_.SetTaskbarOffset(180, 0);
+            lyricsWindow_.Reposition();
             configManager_.Save(config_);
             return 0;
         case TrayManager::kExitCommand:

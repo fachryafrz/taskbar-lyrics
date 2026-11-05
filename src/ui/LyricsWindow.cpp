@@ -112,6 +112,20 @@ void LyricsWindow::SetWrapLongLyrics(bool wrap) {
     }
 }
 
+void LyricsWindow::ApplyConfig(const core::AppConfig& newConfig) {
+    const bool fontChanged = (newConfig.fontSize != config_.fontSize);
+    config_ = newConfig;
+    if (window_ != nullptr) {
+        if (fontChanged) {
+            renderer_.Initialize(window_, static_cast<float>(config_.fontSize));
+        }
+        renderer_.SetWrapLongLyrics(config_.wrapLongLyrics);
+        SetAlwaysOnTop(config_.alwaysOnTop);
+        Reposition();
+        Show(config_.visible);
+    }
+}
+
 bool LyricsWindow::IsUnderTaskbar() const {
     if (window_ == nullptr) {
         return false;

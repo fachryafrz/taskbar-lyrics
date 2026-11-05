@@ -14,6 +14,7 @@ public:
     static constexpr UINT kWrapLyricsCommand = 1004;
     static constexpr UINT kStatusCommand = 1005;
     static constexpr UINT kAlwaysOnTopCommand = 1006;
+    static constexpr UINT kResetPositionCommand = 1008;
 
     bool Create(HWND owner);
     void Destroy();

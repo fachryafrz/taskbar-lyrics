@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(taskbar_lyrics VERSION 0.1.0 LANGUAGES CXX)
+project(lyrix VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,7 +18,7 @@ add_library(taskbar_lyrics_core
 target_include_directories(taskbar_lyrics_core PUBLIC include)
 target_compile_definitions(taskbar_lyrics_core PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 
-add_executable(taskbar-lyrics WIN32
+add_executable(lyrix WIN32
     src/main.cpp
     src/app/Application.cpp
     src/app/TrayManager.cpp
@@ -30,9 +30,9 @@ add_executable(taskbar-lyrics WIN32
     src/ui/TaskbarManager.cpp
 )
 
-target_link_libraries(taskbar-lyrics PRIVATE taskbar_lyrics_core d2d1 dwrite windowscodecs shell32 windowsapp winhttp)
-target_include_directories(taskbar-lyrics PRIVATE include)
-target_compile_definitions(taskbar-lyrics PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_link_libraries(lyrix PRIVATE taskbar_lyrics_core d2d1 dwrite windowscodecs shell32 windowsapp winhttp comctl32 uxtheme)
+target_include_directories(lyrix PRIVATE include)
+target_compile_definitions(lyrix PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 
 include(CTest)
 if(BUILD_TESTING)

@@ -20,6 +20,24 @@ std::chrono::milliseconds FromTimeSpan(winrt::Windows::Foundation::TimeSpan valu
     return std::chrono::duration_cast<std::chrono::milliseconds>(value);
 }
 
+std::vector<uint8_t> ReadThumbnailStream(const GlobalSystemMediaTransportControlsSessionMediaProperties& properties) {
+    try {
+        if (const auto thumb = properties.Thumbnail()) {
+            const auto stream = thumb.OpenReadAsync().get();
+            const auto size = static_cast<size_t>(stream.Size());
+            if (size > 0 && size < 5 * 1024 * 1024) {
+                std::vector<uint8_t> bytes(size);
+                winrt::Windows::Storage::Streams::DataReader reader{stream};
+                reader.LoadAsync(static_cast<uint32_t>(size)).get();
+                reader.ReadBytes(winrt::array_view<uint8_t>{bytes});
+                return bytes;
+            }
+        }
+    } catch (...) {
+    }
+    return {};
+}
+
 }  // namespace
 
 void MediaSessionWorker::Start(HWND destination, int lyricOffsetMilliseconds) {
@@ -48,6 +66,8 @@ void MediaSessionWorker::Run(std::stop_token stop) {
         const auto manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync().get();
         std::wstring activeKey;
         std::vector<uint8_t> activeCoverBytes;
+        auto trackStartTime = std::chrono::steady_clock::now();
+        auto lastCoverCheckTime = std::chrono::steady_clock::now();
         auto lastTick = std::chrono::steady_clock::now();
         std::chrono::milliseconds localPosition{0};
         std::chrono::milliseconds lastReportedPosition{0};
@@ -94,21 +114,9 @@ void MediaSessionWorker::Run(std::stop_token stop) {
 
                     if (key != activeKey) {
                         activeKey = key;
-                        activeCoverBytes.clear();
-                        try {
-                            if (const auto thumb = properties.Thumbnail()) {
-                                const auto stream = thumb.OpenReadAsync().get();
-                                const auto size = static_cast<size_t>(stream.Size());
-                                if (size > 0 && size < 5 * 1024 * 1024) {
-                                    activeCoverBytes.resize(size);
-                                    winrt::Windows::Storage::Streams::DataReader reader{stream};
-                                    reader.LoadAsync(static_cast<uint32_t>(size)).get();
-                                    reader.ReadBytes(winrt::array_view<uint8_t>{activeCoverBytes});
-                                }
-                            }
-                        } catch (...) {
-                            activeCoverBytes.clear();
-                        }
+                        trackStartTime = std::chrono::steady_clock::now();
+                        lastCoverCheckTime = trackStartTime;
+                        activeCoverBytes = ReadThumbnailStream(properties);
 
                         sync_.SetLyrics({});
                         localPosition = FromTimeSpan(timeline.Position());
@@ -129,6 +137,16 @@ void MediaSessionWorker::Run(std::stop_token stop) {
                     const auto nowClock = std::chrono::steady_clock::now();
                     const auto tickDelta = std::chrono::duration_cast<std::chrono::milliseconds>(nowClock - lastTick);
                     lastTick = nowClock;
+
+                    const auto trackAgeMs = std::chrono::duration_cast<std::chrono::milliseconds>(nowClock - trackStartTime).count();
+                    const auto sinceLastCheckMs = std::chrono::duration_cast<std::chrono::milliseconds>(nowClock - lastCoverCheckTime).count();
+                    if ((trackAgeMs < 7000 && sinceLastCheckMs >= 500) || (activeCoverBytes.empty() && sinceLastCheckMs >= 1500)) {
+                        lastCoverCheckTime = nowClock;
+                        auto newCover = ReadThumbnailStream(properties);
+                        if (!newCover.empty() && newCover != activeCoverBytes) {
+                            activeCoverBytes = std::move(newCover);
+                        }
+                    }
 
                     const auto reportedPosition = FromTimeSpan(timeline.Position());
                     const auto lastUpdated = timeline.LastUpdatedTime();

@@ -23,6 +23,7 @@ public:
     void SetAlwaysOnTop(bool alwaysOnTop);
     void SetLocked(bool locked);
     void SetWrapLongLyrics(bool wrap);
+    void ApplyConfig(const core::AppConfig& newConfig);
     void EnsureTopmost();
     [[nodiscard]] bool IsUnderTaskbar() const;
     void Reposition();

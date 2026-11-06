@@ -58,6 +58,41 @@ impl LyricsProvider {
         Some(dir.join(format!("{}_{}.json", safe_name, hash)))
     }
 
+    pub fn prune_disk_cache(max_size_mb: u64, max_files: usize) {
+        let Some(dir) = Self::cache_dir() else { return };
+        let Ok(entries) = fs::read_dir(&dir) else { return };
+
+        let mut files: Vec<(PathBuf, std::time::SystemTime, u64)> = Vec::new();
+        let mut total_size: u64 = 0;
+
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.is_file() {
+                if let Ok(meta) = entry.metadata() {
+                    let size = meta.len();
+                    let modified = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                    total_size += size;
+                    files.push((path, modified, size));
+                }
+            }
+        }
+
+        let max_bytes = max_size_mb * 1024 * 1024;
+        if total_size > max_bytes || files.len() > max_files {
+            // Sort oldest first
+            files.sort_by_key(|f| f.1);
+            let mut remaining_files = files.len();
+            for (path, _, size) in &files {
+                if total_size <= max_bytes && remaining_files <= max_files {
+                    break;
+                }
+                let _ = fs::remove_file(path);
+                total_size = total_size.saturating_sub(*size);
+                remaining_files = remaining_files.saturating_sub(1);
+            }
+        }
+    }
+
     pub async fn fetch(
         &self,
         title: &str,
@@ -165,13 +200,17 @@ impl LyricsProvider {
             },
         };
 
-        // Save to caches
+        // Save to caches with limits
         if let Ok(mut cache) = self.memory_cache.write() {
+            if cache.len() >= 100 {
+                cache.clear();
+            }
             cache.insert(key.clone(), result.clone());
         }
         if let Some(disk_path) = Self::disk_cache_path(&key) {
             if let Ok(json) = serde_json::to_string(&result) {
                 let _ = fs::write(disk_path, json);
+                Self::prune_disk_cache(20, 300);
             }
         }
 

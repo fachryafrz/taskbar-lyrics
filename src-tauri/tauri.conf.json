@@ -20,7 +20,8 @@
         "skipTaskbar": true,
         "resizable": false,
         "shadow": false,
-        "visible": false
+        "visible": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disk-cache-size=33554432 --media-cache-size=16777216"
       }
     ],
     "security": {

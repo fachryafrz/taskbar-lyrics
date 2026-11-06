@@ -31,3 +31,13 @@ windows = { version = "0.58", features = [
     "Foundation",
     "Foundation_Collections",
 ] }
+
+[profile.dev]
+debug = 1
+
+[profile.release]
+strip = true
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"

@@ -22,7 +22,7 @@ impl Default for AppConfig {
         Self {
             width: 400,
             height: 42,
-            taskbar_offset_x: 180,
+            taskbar_offset_x: 0,
             taskbar_offset_y: 0,
             lyric_offset_milliseconds: 300,
             font_size: 12,
@@ -86,5 +86,19 @@ impl ConfigManager {
         }
 
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config_position() {
+        let config = AppConfig::default();
+        assert_eq!(config.taskbar_offset_x, 0);
+        assert_eq!(config.taskbar_offset_y, 0);
+        assert_eq!(config.width, 400);
+        assert_eq!(config.height, 42);
     }
 }

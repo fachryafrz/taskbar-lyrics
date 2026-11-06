@@ -10,7 +10,7 @@ use crate::media::{MediaSessionWorker, MediaUpdatePayload};
 use crate::ui::TaskbarManager;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::{Arc, Mutex};
-use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder};
+use tauri::menu::{CheckMenuItemBuilder, ContextMenu, MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, LogicalSize, Manager, PhysicalPosition};
 
@@ -77,6 +77,80 @@ fn save_window_position(
             ConfigManager::save(&cfg);
         }
     }
+    Ok(())
+}
+
+#[tauri::command]
+fn show_context_menu(
+    app: tauri::AppHandle,
+    config_state: tauri::State<Arc<Mutex<AppConfig>>>,
+) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        let cfg = config_state.lock().unwrap();
+        let toggle_item = CheckMenuItemBuilder::with_id("toggle", "Show Taskbar Window")
+            .checked(cfg.visible)
+            .build(&app)
+            .map_err(|e| e.to_string())?;
+        let lock_item = CheckMenuItemBuilder::with_id("lock", "Lock Position")
+            .checked(cfg.locked)
+            .build(&app)
+            .map_err(|e| e.to_string())?;
+        let wrap_item = CheckMenuItemBuilder::with_id("wrap", "Wrap Long Lyrics")
+            .checked(cfg.wrap_long_lyrics)
+            .build(&app)
+            .map_err(|e| e.to_string())?;
+        let aot_item = CheckMenuItemBuilder::with_id("always_on_top", "Always on top")
+            .checked(cfg.always_on_top)
+            .build(&app)
+            .map_err(|e| e.to_string())?;
+        let reset_item = MenuItemBuilder::with_id("reset", "Reset Position")
+            .build(&app)
+            .map_err(|e| e.to_string())?;
+        let clear_cache_item = MenuItemBuilder::with_id("clear_cache", "Clear Cache")
+            .build(&app)
+            .map_err(|e| e.to_string())?;
+        let exit_item = MenuItemBuilder::with_id("exit", "Exit")
+            .build(&app)
+            .map_err(|e| e.to_string())?;
+
+        let context_menu = MenuBuilder::new(&app)
+            .item(&toggle_item)
+            .item(&lock_item)
+            .item(&wrap_item)
+            .item(&aot_item)
+            .separator()
+            .item(&reset_item)
+            .item(&clear_cache_item)
+            .separator()
+            .item(&exit_item)
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        context_menu.popup(window.as_ref().window().clone()).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn clear_cache(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(base) = dirs::data_local_dir() {
+        // 1. Clear lyrics cache
+        let cache_dir = base.join("Lyrix").join("lyrics_cache");
+        if cache_dir.exists() {
+            let _ = std::fs::remove_dir_all(&cache_dir);
+            let _ = std::fs::create_dir_all(&cache_dir);
+        }
+
+        // 2. Clear WebView2 browser/EBWebView cache
+        let webview_cache = base.join("com.lyrix.taskbar").join("EBWebView");
+        for sub in &["Default/Cache", "Default/Code Cache", "Default/GPUCache"] {
+            let path = webview_cache.join(sub);
+            if path.exists() {
+                let _ = std::fs::remove_dir_all(&path);
+            }
+        }
+    }
+    let _ = app.emit("clear-cache", ());
     Ok(())
 }
 
@@ -165,6 +239,95 @@ fn apply_win32_window_styles(window: &tauri::WebviewWindow, _locked: bool) {
     }
 }
 
+fn handle_menu_action(
+    app: &tauri::AppHandle,
+    id: &str,
+    config_state: &Arc<Mutex<AppConfig>>,
+) {
+    let mut cfg = config_state.lock().unwrap();
+    let window = app.get_webview_window("main");
+
+    match id {
+        "toggle" => {
+            cfg.visible = !cfg.visible;
+            ConfigManager::save(&cfg);
+            if let Some(w) = window {
+                if cfg.visible {
+                    let _ = w.show();
+                } else {
+                    let _ = w.hide();
+                }
+            }
+        }
+        "lock" => {
+            cfg.locked = !cfg.locked;
+            ConfigManager::save(&cfg);
+            if let Some(w) = window {
+                apply_win32_window_styles(&w, cfg.locked);
+            }
+            let _ = app.emit("config-updated", cfg.clone());
+        }
+        "wrap" => {
+            cfg.wrap_long_lyrics = !cfg.wrap_long_lyrics;
+            ConfigManager::save(&cfg);
+            let _ = app.emit("config-updated", cfg.clone());
+        }
+        "always_on_top" => {
+            cfg.always_on_top = !cfg.always_on_top;
+            ConfigManager::save(&cfg);
+            #[cfg(target_os = "windows")]
+            ALWAYS_ON_TOP.store(cfg.always_on_top, Ordering::Relaxed);
+            if let Some(w) = window {
+                let _ = w.set_always_on_top(cfg.always_on_top);
+                #[cfg(target_os = "windows")]
+                if let Ok(hwnd) = w.hwnd() {
+                    let hwnd = windows::Win32::Foundation::HWND(hwnd.0);
+                    TaskbarManager::ensure_topmost(hwnd, cfg.always_on_top);
+                }
+            }
+        }
+        "reset" => {
+            cfg.taskbar_offset_x = 0;
+            cfg.taskbar_offset_y = 0;
+            ConfigManager::save(&cfg);
+            if let Some(w) = window {
+                let bounds = TaskbarManager::widget_bounds(cfg.width, cfg.height);
+                let _ = w.set_position(PhysicalPosition::new(bounds.x, bounds.y));
+                #[cfg(target_os = "windows")]
+                if let Ok(hwnd) = w.hwnd() {
+                    let hwnd = windows::Win32::Foundation::HWND(hwnd.0);
+                    TaskbarManager::attach_to_taskbar(hwnd);
+                    TaskbarManager::ensure_topmost(hwnd, cfg.always_on_top);
+                }
+            }
+        }
+        "clear_cache" => {
+            if let Some(base) = dirs::data_local_dir() {
+                // 1. Clear lyrics cache
+                let cache_dir = base.join("Lyrix").join("lyrics_cache");
+                if cache_dir.exists() {
+                    let _ = std::fs::remove_dir_all(&cache_dir);
+                    let _ = std::fs::create_dir_all(&cache_dir);
+                }
+
+                // 2. Clear WebView2 browser/EBWebView cache
+                let webview_cache = base.join("com.lyrix.taskbar").join("EBWebView");
+                for sub in &["Default/Cache", "Default/Code Cache", "Default/GPUCache"] {
+                    let path = webview_cache.join(sub);
+                    if path.exists() {
+                        let _ = std::fs::remove_dir_all(&path);
+                    }
+                }
+            }
+            let _ = app.emit("clear-cache", ());
+        }
+        "exit" => {
+            std::process::exit(0);
+        }
+        _ => {}
+    }
+}
+
 fn main() {
     let config = ConfigManager::load();
     let config_state = Arc::new(Mutex::new(config.clone()));
@@ -182,7 +345,9 @@ fn main() {
             get_current_media,
             save_config,
             move_window_by,
-            save_window_position
+            save_window_position,
+            show_context_menu,
+            clear_cache
         ])
         .setup(move |app| {
             let window = app.get_webview_window("main").expect("main window missing");
@@ -254,6 +419,7 @@ fn main() {
                 .checked(config_for_setup.always_on_top)
                 .build(app)?;
             let reset_item = MenuItemBuilder::with_id("reset", "Reset Position").build(app)?;
+            let clear_cache_item = MenuItemBuilder::with_id("clear_cache", "Clear Cache").build(app)?;
             let exit_item = MenuItemBuilder::with_id("exit", "Exit").build(app)?;
 
             let tray_menu = MenuBuilder::new(app)
@@ -263,75 +429,19 @@ fn main() {
                 .item(&aot_item)
                 .separator()
                 .item(&reset_item)
+                .item(&clear_cache_item)
                 .separator()
                 .item(&exit_item)
                 .build()?;
 
-            let app_handle_for_tray = app.handle().clone();
+            let config_state_for_menu = Arc::clone(&config_state_for_tray);
+            app.on_menu_event(move |app_handle, event| {
+                handle_menu_action(app_handle, event.id().as_ref(), &config_state_for_menu);
+            });
+
             let mut tray_builder = TrayIconBuilder::new()
                 .menu(&tray_menu)
-                .tooltip("Lyrix - Taskbar Lyrics")
-                .on_menu_event(move |_app, event| {
-                    let id = event.id().as_ref();
-                    let mut cfg = config_state_for_tray.lock().unwrap();
-                    let window = app_handle_for_tray.get_webview_window("main");
-
-                    match id {
-                        "toggle" => {
-                            cfg.visible = !cfg.visible;
-                            ConfigManager::save(&cfg);
-                            if let Some(w) = window {
-                                if cfg.visible { let _ = w.show(); } else { let _ = w.hide(); }
-                            }
-                        }
-                        "lock" => {
-                            cfg.locked = !cfg.locked;
-                            ConfigManager::save(&cfg);
-                            if let Some(w) = window {
-                                apply_win32_window_styles(&w, cfg.locked);
-                            }
-                            let _ = app_handle_for_tray.emit("config-updated", cfg.clone());
-                        }
-                        "wrap" => {
-                            cfg.wrap_long_lyrics = !cfg.wrap_long_lyrics;
-                            ConfigManager::save(&cfg);
-                            let _ = app_handle_for_tray.emit("config-updated", cfg.clone());
-                        }
-                        "always_on_top" => {
-                            cfg.always_on_top = !cfg.always_on_top;
-                            ConfigManager::save(&cfg);
-                            #[cfg(target_os = "windows")]
-                            ALWAYS_ON_TOP.store(cfg.always_on_top, Ordering::Relaxed);
-                            if let Some(w) = window {
-                                let _ = w.set_always_on_top(cfg.always_on_top);
-                                #[cfg(target_os = "windows")]
-                                if let Ok(hwnd) = w.hwnd() {
-                                    let hwnd = windows::Win32::Foundation::HWND(hwnd.0);
-                                    TaskbarManager::ensure_topmost(hwnd, cfg.always_on_top);
-                                }
-                            }
-                        }
-                        "reset" => {
-                            cfg.taskbar_offset_x = 180;
-                            cfg.taskbar_offset_y = 0;
-                            ConfigManager::save(&cfg);
-                            if let Some(w) = window {
-                                let bounds = TaskbarManager::widget_bounds(cfg.width, cfg.height);
-                                let _ = w.set_position(PhysicalPosition::new(bounds.x + 180, bounds.y));
-                                #[cfg(target_os = "windows")]
-                                if let Ok(hwnd) = w.hwnd() {
-                                    let hwnd = windows::Win32::Foundation::HWND(hwnd.0);
-                                    TaskbarManager::attach_to_taskbar(hwnd);
-                                    TaskbarManager::ensure_topmost(hwnd, cfg.always_on_top);
-                                }
-                            }
-                        }
-                        "exit" => {
-                            std::process::exit(0);
-                        }
-                        _ => {}
-                    }
-                });
+                .tooltip("Lyrix - Taskbar Lyrics");
 
             if let Some(icon) = app.default_window_icon() {
                 tray_builder = tray_builder.icon(icon.clone());

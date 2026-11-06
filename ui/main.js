@@ -16,6 +16,14 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentLyrics = []; // [{ timeMs, text }]
   let lyricsCache = new Map();
 
+  function cacheLyrics(key, parsed) {
+    if (lyricsCache.size >= 100) {
+      const oldest = lyricsCache.keys().next().value;
+      if (oldest) lyricsCache.delete(oldest);
+    }
+    lyricsCache.set(key, parsed);
+  }
+
   let track = {
     title: "",
     artist: "",
@@ -56,6 +64,14 @@ document.addEventListener("DOMContentLoaded", () => {
       if (window.__TAURI__ && window.__TAURI__.core) {
         window.__TAURI__.core.invoke("save_window_position");
       }
+    }
+  });
+
+  // --- Context Menu (Right Click) ---
+  window.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    if (window.__TAURI__ && window.__TAURI__.core) {
+      window.__TAURI__.core.invoke("show_context_menu");
     }
   });
 
@@ -213,7 +229,7 @@ document.addEventListener("DOMContentLoaded", () => {
           const data = await res.json();
           if (data.syncedLyrics) {
             const parsed = parseLrc(data.syncedLyrics);
-            lyricsCache.set(key, parsed);
+            cacheLyrics(key, parsed);
             return parsed;
           }
         }
@@ -231,7 +247,7 @@ document.addEventListener("DOMContentLoaded", () => {
           const matched = findBestLyricsMatch(items, cleanTitle, cleanArtist, durationMs);
           if (matched && matched.syncedLyrics) {
             const parsed = parseLrc(matched.syncedLyrics);
-            lyricsCache.set(key, parsed);
+            cacheLyrics(key, parsed);
             return parsed;
           }
         }
@@ -246,7 +262,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const matched = findBestLyricsMatch(items, cleanTitle, cleanArtist, durationMs);
             if (matched && matched.syncedLyrics) {
               const parsed = parseLrc(matched.syncedLyrics);
-              lyricsCache.set(key, parsed);
+              cacheLyrics(key, parsed);
               return parsed;
             }
           }
@@ -447,6 +463,21 @@ document.addEventListener("DOMContentLoaded", () => {
       if (typeof event.payload === "number") {
         lyricOffsetMs = event.payload;
         updateActiveLyric();
+      }
+    });
+
+    window.__TAURI__.event.listen("clear-cache", () => {
+      lyricsCache.clear();
+      if (track.has_media && currentTrackKey) {
+        currentLyrics = [];
+        updateActiveLyric();
+        const capturedKey = currentTrackKey;
+        fetchLyrics(track.title, track.artist, track.album, track.duration_ms).then((lyrics) => {
+          if (currentTrackKey === capturedKey) {
+            currentLyrics = lyrics;
+            updateActiveLyric();
+          }
+        });
       }
     });
 

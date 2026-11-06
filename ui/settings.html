@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lyrix Settings</title>
+  <link rel="stylesheet" href="settings.css">
+</head>
+<body>
+  <main class="settings-shell">
+    <header class="page-header">
+      <h1>Settings</h1>
+      <p>Adjust the overlay and keep lyrics in sync with playback.</p>
+    </header>
+
+    <form id="settings-form" novalidate>
+      <fieldset id="settings-fields" disabled>
+        <legend class="visually-hidden">Lyrix settings</legend>
+        <section class="settings-section" aria-labelledby="overlay-heading">
+          <h2 id="overlay-heading">Overlay</h2>
+          <div class="field-grid">
+            <div class="field">
+              <label for="width">Width <span class="unit">px</span></label>
+              <input id="width" name="width" type="number" min="400" max="2147483647" step="1" required aria-describedby="width-help width-error">
+              <p id="width-help" class="field-help">Minimum width is 400 px.</p>
+              <p id="width-error" class="field-error" hidden></p>
+            </div>
+
+            <div class="field">
+              <label for="height">Height <span class="unit">px</span></label>
+              <input id="height" name="height" type="number" min="42" max="2147483647" step="1" required aria-describedby="height-help height-error">
+              <p id="height-help" class="field-help">Minimum height is 42 px.</p>
+              <p id="height-error" class="field-error" hidden></p>
+            </div>
+
+            <div class="field">
+              <label for="font-size">Font size <span class="unit">px</span></label>
+              <input id="font-size" name="fontSize" type="number" min="1" max="2147483647" step="1" required aria-describedby="font-size-help font-size-error">
+              <p id="font-size-help" class="field-help">Text size for the active lyric.</p>
+              <p id="font-size-error" class="field-error" hidden></p>
+            </div>
+
+            <div class="field">
+              <label for="lyric-offset">Lyric sync offset <span class="unit">ms</span></label>
+              <input id="lyric-offset" name="lyricOffsetMilliseconds" type="number" min="-2147483648" max="2147483647" step="1" required aria-describedby="lyric-offset-help lyric-offset-error">
+              <p id="lyric-offset-help" class="field-help">Positive values show lyrics earlier; negative values show them later.</p>
+              <p id="lyric-offset-error" class="field-error" hidden></p>
+            </div>
+          </div>
+        </section>
+
+        <section class="settings-section" aria-labelledby="behavior-heading">
+          <h2 id="behavior-heading">Behavior</h2>
+          <label class="check-row" for="wrap-long-lyrics">
+            <input id="wrap-long-lyrics" name="wrapLongLyrics" type="checkbox">
+            <span>
+              <strong>Wrap long lyrics</strong>
+              <span class="field-help">Continue long lines on a second line.</span>
+            </span>
+          </label>
+          <label class="check-row" for="always-on-top">
+            <input id="always-on-top" name="alwaysOnTop" type="checkbox">
+            <span>
+              <strong>Always on top</strong>
+              <span class="field-help">Keep the lyric overlay above other windows.</span>
+            </span>
+          </label>
+        </section>
+      </fieldset>
+
+      <footer class="form-footer">
+        <div class="feedback" aria-live="polite">
+          <p id="status-message" class="status-message" role="status"></p>
+          <p id="error-message" class="error-message" role="alert" hidden></p>
+          <button id="retry-button" class="retry-button" type="button" hidden>Try again</button>
+        </div>
+        <button id="apply-button" class="apply-button" type="submit" disabled>Apply</button>
+      </footer>
+    </form>
+  </main>
+
+  <script src="settings.js"></script>
+</body>
+</html>

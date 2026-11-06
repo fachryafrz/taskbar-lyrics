@@ -1,2 +1,2 @@
 pub mod config;
-pub use config::{AppConfig, ConfigManager};
+pub use config::{AppConfig, ConfigManager, SettingsUpdate};

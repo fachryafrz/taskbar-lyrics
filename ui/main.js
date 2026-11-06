@@ -289,12 +289,12 @@ document.addEventListener("DOMContentLoaded", () => {
   // --- 6. Active Lyric Evaluator ---
   function updateActiveLyric() {
     if (!track.has_media || (!track.title && !track.artist)) {
-      updateLyricDisplay("Waiting for playback...");
+      updateLyricDisplay("Play something to see lyrics");
       return;
     }
 
     if (!currentLyrics || currentLyrics.length === 0) {
-      const banner = track.title && track.artist ? `${track.title} - ${track.artist}` : (track.title || "Waiting for playback...");
+      const banner = track.title && track.artist ? `${track.title} - ${track.artist}` : (track.title || "Play something to see lyrics");
       updateLyricDisplay(banner);
       return;
     }

@@ -39,3 +39,8 @@ Build release binary:
 cargo build --release --manifest-path src-tauri/Cargo.toml
 ```
 The optimized executable will be located at `src-tauri/target/release/lyrix.exe`.
+
+Clean build artifacts:
+```powershell
+cargo clean --manifest-path src-tauri/Cargo.toml
+```

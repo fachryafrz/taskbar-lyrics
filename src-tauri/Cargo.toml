@@ -1,10 +1,10 @@
 [package]
 name = "taskbar-lyrics"
-version = "0.1.0"
+version = "0.1.1"
 description = "Live lyrics on your taskbar"
 authors = ["Fachry Dwi Afriza <fachry.dwi.fd.fda@gmail.com>"]
 license = "MIT"
-repository = "https://github.com/fachryafrz/lyrix"
+repository = "https://github.com/fachryafrz/taskbar-lyrics"
 edition = "2021"
 
 [build-dependencies]

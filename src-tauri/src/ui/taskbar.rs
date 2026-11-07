@@ -7,10 +7,10 @@ use windows::Win32::UI::Shell::{
     SHAppBarMessage, APPBARDATA, ABE_BOTTOM, ABE_LEFT, ABE_RIGHT, ABE_TOP, ABM_GETTASKBARPOS,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    FindWindowW, GetSystemMetrics, GetWindow, GetWindowRect, SetWindowLongPtrW, SetWindowPos,
-    SystemParametersInfoW, GWLP_HWNDPARENT, GW_HWNDPREV, GW_OWNER, HWND_TOPMOST, SM_CXSCREEN,
-    SM_CYSCREEN, SPI_GETWORKAREA, SWP_NOACTIVATE, SWP_NOCOPYBITS, SWP_NOMOVE, SWP_NOOWNERZORDER,
-    SWP_NOSENDCHANGING, SWP_NOSIZE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+    FindWindowW, GetClassNameW, GetSystemMetrics, GetWindow, GetWindowRect, IsWindowVisible,
+    SetWindowPos, SystemParametersInfoW, GW_HWNDPREV, HWND_TOPMOST, SM_CXSCREEN, SM_CYSCREEN,
+    SPI_GETWORKAREA, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
+    SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,6 +20,10 @@ pub struct WidgetBounds {
     pub width: i32,
     pub height: i32,
     pub edge: u32,
+}
+
+fn rects_overlap(a: &RECT, b: &RECT) -> bool {
+    a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
 }
 
 pub struct TaskbarManager;
@@ -34,30 +38,12 @@ impl TaskbarManager {
         }
     }
 
-    pub fn secondary_taskbar_window() -> Option<HWND> {
-        let hwnd = unsafe { FindWindowW(w!("Shell_SecondaryTrayWnd"), None) }.ok()?;
-        if hwnd.0.is_null() {
-            None
-        } else {
-            Some(hwnd)
-        }
-    }
-
-    pub fn attach_to_taskbar(window: HWND) {
-        if let Some(taskbar) = Self::taskbar_window() {
-            unsafe {
-                let owner = GetWindow(window, GW_OWNER).unwrap_or(HWND(std::ptr::null_mut()));
-                if owner != taskbar {
-                    SetWindowLongPtrW(window, GWLP_HWNDPARENT, taskbar.0 as isize);
-                }
-            }
-        }
-    }
-
-    pub fn is_under_taskbar(window: HWND) -> bool {
-        let taskbar = Self::taskbar_window();
-        let secondary = Self::secondary_taskbar_window();
-        if taskbar.is_none() && secondary.is_none() {
+    fn is_under_taskbar(window: HWND) -> bool {
+        let mut window_rect = RECT::default();
+        if unsafe { GetWindowRect(window, &mut window_rect).is_err() }
+            || window_rect.right <= window_rect.left
+            || window_rect.bottom <= window_rect.top
+        {
             return false;
         }
 
@@ -66,8 +52,18 @@ impl TaskbarManager {
             if cur_hwnd.0.is_null() {
                 break;
             }
-            if Some(cur_hwnd) == taskbar || Some(cur_hwnd) == secondary {
-                return true;
+            if unsafe { IsWindowVisible(cur_hwnd).as_bool() } {
+                let mut rect = RECT::default();
+                if unsafe { GetWindowRect(cur_hwnd, &mut rect).is_ok() }
+                    && rects_overlap(&window_rect, &rect)
+                {
+                    let mut class_name = [0u16; 256];
+                    let len = unsafe { GetClassNameW(cur_hwnd, &mut class_name) };
+                    let name = String::from_utf16_lossy(&class_name[..len as usize]);
+                    if matches!(name.as_str(), "Shell_TrayWnd" | "Shell_SecondaryTrayWnd") {
+                        return true;
+                    }
+                }
             }
             current = unsafe { GetWindow(cur_hwnd, GW_HWNDPREV) };
         }
@@ -78,7 +74,6 @@ impl TaskbarManager {
         if !always_on_top {
             return;
         }
-        // If the window is below the taskbar in the z-order, bring it above
         if Self::is_under_taskbar(window) {
             unsafe {
                 let _ = SetWindowPos(
@@ -88,12 +83,7 @@ impl TaskbarManager {
                     0,
                     0,
                     0,
-                    SWP_NOMOVE
-                        | SWP_NOSIZE
-                        | SWP_NOACTIVATE
-                        | SWP_NOOWNERZORDER
-                        | SWP_NOSENDCHANGING
-                        | SWP_NOCOPYBITS,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
                 );
             }
         }

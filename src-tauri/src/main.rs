@@ -5,7 +5,9 @@ mod lyrics;
 mod media;
 mod ui;
 
-use crate::core::{AppConfig, ConfigManager, SettingsUpdate};
+use crate::core::{
+    fetch_latest_release, load_cached_update, AppConfig, ConfigManager, SettingsUpdate, UpdateInfo,
+};
 use crate::media::{MediaSessionWorker, MediaUpdatePayload};
 use crate::ui::TaskbarManager;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
@@ -21,6 +23,8 @@ use tauri_plugin_autostart::ManagerExt;
 static OVERLAY_HWND: AtomicIsize = AtomicIsize::new(0);
 #[cfg(target_os = "windows")]
 static ALWAYS_ON_TOP: AtomicBool = AtomicBool::new(true);
+#[cfg(target_os = "windows")]
+static TOPMOST_CHECK_PENDING: AtomicBool = AtomicBool::new(false);
 
 struct TrayMenuChecks {
     wrap: tauri::menu::CheckMenuItem<tauri::Wry>,
@@ -203,9 +207,31 @@ fn save_window_position(
 fn show_context_menu(
     app: tauri::AppHandle,
     config_state: tauri::State<Arc<Mutex<AppConfig>>>,
+    update_state: tauri::State<Arc<Mutex<Option<UpdateInfo>>>>,
 ) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
         let cfg = config_state.lock().unwrap();
+        let mut menu_builder = MenuBuilder::new(&app);
+
+        let update_item_opt = if let Some(info) = update_state.lock().unwrap().as_ref() {
+            if info.update_available {
+                let label = format!("Update Available (v{})", info.latest_version);
+                Some(
+                    MenuItemBuilder::with_id("update_available", label)
+                        .build(&app)
+                        .map_err(|e| e.to_string())?,
+                )
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if let Some(ref update_item) = update_item_opt {
+            menu_builder = menu_builder.item(update_item).separator();
+        }
+
         let lock_item = CheckMenuItemBuilder::with_id("lock", "Lock Position")
             .checked(cfg.locked)
             .build(&app)
@@ -235,7 +261,7 @@ fn show_context_menu(
             .build(&app)
             .map_err(|e| e.to_string())?;
 
-        let context_menu = MenuBuilder::new(&app)
+        let context_menu = menu_builder
             .item(&lock_item)
             .item(&wrap_item)
             .item(&aot_item)
@@ -252,6 +278,37 @@ fn show_context_menu(
         context_menu.popup(window.as_ref().window().clone()).map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+#[tauri::command]
+fn get_update_info(
+    update_state: tauri::State<Arc<Mutex<Option<UpdateInfo>>>>,
+) -> Option<UpdateInfo> {
+    update_state.lock().unwrap().clone()
+}
+
+#[tauri::command]
+async fn check_for_updates(
+    app: tauri::AppHandle,
+    update_state: tauri::State<'_, Arc<Mutex<Option<UpdateInfo>>>>,
+    config_state: tauri::State<'_, Arc<Mutex<AppConfig>>>,
+    tray_menu_checks: tauri::State<'_, Arc<Mutex<Option<TrayMenuChecks>>>>,
+) -> Result<UpdateInfo, String> {
+    let repo = "fachryafrz/taskbar-lyrics";
+    let current_version = env!("CARGO_PKG_VERSION");
+    let cached = update_state.lock().unwrap().clone();
+    let info = fetch_latest_release(repo, current_version, cached.as_ref()).await?;
+    *update_state.lock().unwrap() = Some(info.clone());
+
+    update_tray_menu(
+        &app,
+        &config_state,
+        &update_state,
+        &tray_menu_checks,
+    );
+
+    let _ = app.emit("update-status", &info);
+    Ok(info)
 }
 
 fn perform_cache_clear() {
@@ -294,7 +351,6 @@ fn perform_reset_position(
         #[cfg(target_os = "windows")]
         if let Ok(hwnd) = w.hwnd() {
             let hwnd = windows::Win32::Foundation::HWND(hwnd.0);
-            TaskbarManager::attach_to_taskbar(hwnd);
             TaskbarManager::ensure_topmost(hwnd, cfg.always_on_top);
         }
     }
@@ -345,7 +401,6 @@ fn save_config(
         #[cfg(target_os = "windows")]
         if let Ok(hwnd) = window.hwnd() {
             let hwnd = windows::Win32::Foundation::HWND(hwnd.0);
-            TaskbarManager::attach_to_taskbar(hwnd);
             TaskbarManager::ensure_topmost(hwnd, new_config.always_on_top);
         }
     }
@@ -393,7 +448,6 @@ fn apply_settings(
         #[cfg(target_os = "windows")]
         if let Ok(hwnd) = window.hwnd() {
             let hwnd = windows::Win32::Foundation::HWND(hwnd.0);
-            TaskbarManager::attach_to_taskbar(hwnd);
             TaskbarManager::ensure_topmost(hwnd, updated.always_on_top);
         }
     }
@@ -407,44 +461,49 @@ fn apply_win32_window_styles(window: &tauri::WebviewWindow, _locked: bool) {
     #[cfg(target_os = "windows")]
     {
         use windows::Win32::Foundation::HWND;
+        use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
+        use windows::Win32::UI::Shell::{ITaskbarList, TaskbarList};
         use windows::Win32::UI::WindowsAndMessaging::{
-            GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST,
-            SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOCOPYBITS, SWP_NOMOVE, SWP_NOOWNERZORDER,
-            SWP_NOSENDCHANGING, SWP_NOSIZE, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-            WS_EX_TOPMOST,
+            GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, GWL_EXSTYLE,
+            HWND_TOP, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+            WS_EX_APPWINDOW, WS_EX_COMPOSITED, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
         };
+        use windows::core::w;
 
         if let Ok(hwnd) = window.hwnd() {
             let hwnd = HWND(hwnd.0);
             unsafe {
+                // Ensure empty window title
+                let _ = SetWindowTextW(hwnd, w!(""));
+
+                // Strip WS_EX_APPWINDOW and ensure WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_COMPOSITED
                 let cur_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-                let new_style = cur_style
+                let new_style = (cur_style & !(WS_EX_APPWINDOW.0 as isize))
                     | (WS_EX_TOOLWINDOW.0 as isize)
                     | (WS_EX_NOACTIVATE.0 as isize)
                     | (WS_EX_LAYERED.0 as isize)
-                    | (WS_EX_TOPMOST.0 as isize);
+                    | (WS_EX_COMPOSITED.0 as isize);
 
-                SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_style);
+                if new_style != cur_style {
+                    SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_style);
+                    let _ = SetWindowPos(
+                        hwnd,
+                        HWND_TOP,
+                        0,
+                        0,
+                        0,
+                        0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+                    );
+                }
 
-                // Attach to Shell_TrayWnd as parent/owner so clicking taskbar keeps overlay on top
-                TaskbarManager::attach_to_taskbar(hwnd);
-
-                // Refresh window frame & ensure topmost
-                let _ = SetWindowPos(
-                    hwnd,
-                    HWND_TOPMOST,
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_NOMOVE
-                        | SWP_NOSIZE
-                        | SWP_NOACTIVATE
-                        | SWP_NOOWNERZORDER
-                        | SWP_NOSENDCHANGING
-                        | SWP_NOCOPYBITS
-                        | SWP_FRAMECHANGED,
-                );
+                // Explicitly remove from taskbar list
+                if let Ok(taskbar_list) =
+                    CoCreateInstance::<_, ITaskbarList>(&TaskbarList, None, CLSCTX_INPROC_SERVER)
+                {
+                    let _ = taskbar_list.HrInit();
+                    let _ = taskbar_list.DeleteTab(hwnd);
+                }
             }
         }
     }
@@ -453,7 +512,21 @@ fn apply_win32_window_styles(window: &tauri::WebviewWindow, _locked: bool) {
 fn build_tray_menu(
     app: &tauri::AppHandle,
     config: &AppConfig,
+    update_info: Option<&UpdateInfo>,
 ) -> tauri::Result<(tauri::menu::Menu<tauri::Wry>, TrayMenuChecks)> {
+    let mut menu_builder = MenuBuilder::new(app);
+
+    if let Some(info) = update_info {
+        if info.update_available {
+            let update_item = MenuItemBuilder::with_id(
+                "update_available",
+                format!("Update Available (v{})", info.latest_version),
+            )
+            .build(app)?;
+            menu_builder = menu_builder.item(&update_item).separator();
+        }
+    }
+
     let lock_item = CheckMenuItemBuilder::with_id("lock", "Lock Position")
         .checked(config.locked)
         .build(app)?;
@@ -476,7 +549,7 @@ fn build_tray_menu(
         always_on_top: aot_item.clone(),
         run_on_startup: autostart_item.clone(),
     };
-    let menu = MenuBuilder::new(app)
+    let menu = menu_builder
         .item(&lock_item)
         .item(&wrap_item)
         .item(&aot_item)
@@ -490,6 +563,24 @@ fn build_tray_menu(
         .build()?;
 
     Ok((menu, checks))
+}
+
+fn update_tray_menu(
+    app: &tauri::AppHandle,
+    config_state: &Arc<Mutex<AppConfig>>,
+    update_state: &Arc<Mutex<Option<UpdateInfo>>>,
+    tray_menu_checks: &Arc<Mutex<Option<TrayMenuChecks>>>,
+) {
+    let cfg = config_state.lock().unwrap().clone();
+    let update_guard = update_state.lock().unwrap();
+    if let Ok((new_menu, new_checks)) = build_tray_menu(app, &cfg, update_guard.as_ref()) {
+        if let Ok(mut checks) = tray_menu_checks.lock() {
+            *checks = Some(new_checks);
+        }
+        if let Some(tray) = app.tray_by_id("main-tray") {
+            let _ = tray.set_menu(Some(new_menu));
+        }
+    }
 }
 
 fn sync_tray_menu_checks(
@@ -511,6 +602,10 @@ fn handle_menu_action(
     config_state: &Arc<Mutex<AppConfig>>,
     tray_menu_checks: &Arc<Mutex<Option<TrayMenuChecks>>>,
 ) {
+    if id == "update_available" {
+        open_settings_window(app, Some("update"));
+        return;
+    }
     if id == "settings" {
         open_settings_window(app, None);
         return;
@@ -577,7 +672,6 @@ fn handle_menu_action(
                 #[cfg(target_os = "windows")]
                 if let Ok(hwnd) = w.hwnd() {
                     let hwnd = windows::Win32::Foundation::HWND(hwnd.0);
-                    TaskbarManager::attach_to_taskbar(hwnd);
                     TaskbarManager::ensure_topmost(hwnd, cfg.always_on_top);
                 }
             }
@@ -603,16 +697,21 @@ fn main() {
     let tray_menu_checks: Arc<Mutex<Option<TrayMenuChecks>>> = Arc::new(Mutex::new(None));
     let settings_window_creation = Arc::new(Mutex::new(()));
     let media_worker = Arc::new(MediaSessionWorker::new());
+    let initial_update = load_cached_update();
+    let update_state: Arc<Mutex<Option<UpdateInfo>>> = Arc::new(Mutex::new(initial_update.clone()));
 
     let config_for_setup = config.clone();
     let config_state_for_tray = Arc::clone(&config_state);
     let tray_menu_checks_for_setup = Arc::clone(&tray_menu_checks);
+    let update_state_for_setup = Arc::clone(&update_state);
+    let initial_update_for_setup = initial_update;
     let worker_for_run = Arc::clone(&media_worker);
 
     tauri::Builder::default()
         .manage(config_state)
         .manage(Arc::clone(&tray_menu_checks))
         .manage(settings_window_creation)
+        .manage(Arc::clone(&update_state))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -621,6 +720,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_config,
             get_app_info,
+            get_update_info,
+            check_for_updates,
             open_in_browser,
             get_current_media,
             save_config,
@@ -678,20 +779,31 @@ fn main() {
                     );
                 }
 
-                // Background watchdog thread for persistent taskbar z-order
-                std::thread::spawn(move || {
-                    loop {
-                        std::thread::sleep(std::time::Duration::from_millis(300));
+                let z_order_app = app.handle().clone();
+                std::thread::spawn(move || loop {
+                    std::thread::sleep(std::time::Duration::from_millis(150));
+                    if !ALWAYS_ON_TOP.load(Ordering::Relaxed)
+                        || TOPMOST_CHECK_PENDING.swap(true, Ordering::AcqRel)
+                    {
+                        continue;
+                    }
+                    let posted = z_order_app.run_on_main_thread(|| {
                         let raw = OVERLAY_HWND.load(Ordering::Relaxed);
                         if raw != 0 && ALWAYS_ON_TOP.load(Ordering::Relaxed) {
                             let overlay = windows::Win32::Foundation::HWND(raw as *mut _);
                             TaskbarManager::ensure_topmost(overlay, true);
                         }
+                        TOPMOST_CHECK_PENDING.store(false, Ordering::Release);
+                    });
+                    if posted.is_err() {
+                        TOPMOST_CHECK_PENDING.store(false, Ordering::Release);
+                        break;
                     }
                 });
             }
 
             let _ = window.show();
+            apply_win32_window_styles(&window, config_for_setup.locked);
 
             // Synchronize autostart on application startup
             let autolaunch = app.autolaunch();
@@ -700,7 +812,8 @@ fn main() {
             }
 
             // Setup System Tray
-            let (tray_menu, check_items) = build_tray_menu(app.handle(), &config_for_setup)?;
+            let (tray_menu, check_items) =
+                build_tray_menu(app.handle(), &config_for_setup, initial_update_for_setup.as_ref())?;
             if let Ok(mut checks) = tray_menu_checks_for_setup.lock() {
                 *checks = Some(check_items);
             }
@@ -716,7 +829,7 @@ fn main() {
                 );
             });
 
-            let mut tray_builder = TrayIconBuilder::new()
+            let mut tray_builder = TrayIconBuilder::with_id("main-tray")
                 .menu(&tray_menu)
                 .tooltip("Taskbar Lyrics");
 
@@ -725,18 +838,35 @@ fn main() {
             }
             let _tray = tray_builder.build(app)?;
 
+            // Background update check on startup (with HTTP ETag 304 validation)
+            let app_for_update = app.handle().clone();
+            let update_state_for_bg = Arc::clone(&update_state_for_setup);
+            let config_for_bg = Arc::clone(&config_state_for_tray);
+            let tray_checks_for_bg = Arc::clone(&tray_menu_checks_for_setup);
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+                let repo = "fachryafrz/taskbar-lyrics";
+                let current_version = env!("CARGO_PKG_VERSION");
+                let cached = update_state_for_bg.lock().unwrap().clone();
+                if let Ok(info) = fetch_latest_release(repo, current_version, cached.as_ref()).await {
+                    let is_avail = info.update_available;
+                    *update_state_for_bg.lock().unwrap() = Some(info.clone());
+                    if is_avail {
+                        update_tray_menu(
+                            &app_for_update,
+                            &config_for_bg,
+                            &update_state_for_bg,
+                            &tray_checks_for_bg,
+                        );
+                        let _ = app_for_update.emit("update-status", &info);
+                    }
+                }
+            });
+
             // Start Media Session Worker
             let app_handle = app.handle().clone();
             worker_for_run.start(move |payload| {
                 let _ = app_handle.emit("media-update", payload);
-                #[cfg(target_os = "windows")]
-                {
-                    let raw = OVERLAY_HWND.load(Ordering::Relaxed);
-                    if raw != 0 && ALWAYS_ON_TOP.load(Ordering::Relaxed) {
-                        let overlay = windows::Win32::Foundation::HWND(raw as *mut _);
-                        TaskbarManager::ensure_topmost(overlay, true);
-                    }
-                }
             });
 
             Ok(())

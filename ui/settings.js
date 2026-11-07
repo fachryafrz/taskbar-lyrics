@@ -243,6 +243,141 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   retryButton.addEventListener("click", loadConfig);
 
+  // About & Release Notes Modal Logic
+  const appVersionEl = document.getElementById("app-version");
+  const openChangelogBtn = document.getElementById("open-changelog-btn");
+  const openGithubBtn = document.getElementById("open-github-btn");
+  const changelogModal = document.getElementById("changelog-modal");
+  const closeChangelogBtn = document.getElementById("close-changelog-btn");
+  const dismissChangelogBtn = document.getElementById("dismiss-changelog-btn");
+  const changelogBody = document.getElementById("changelog-body");
+
+  let repoUrl = "https://github.com/fachryafrz/taskbar-lyrics";
+
+  const releaseNotes = [
+    {
+      version: "0.1.0",
+      date: "Initial Preview",
+      tag: "Current",
+      sections: [
+        {
+          title: "What's New",
+          items: [
+            "Detects playback and album artwork from Spotify, Apple Music, YouTube, and web browsers.",
+            "Displays live synchronized lyrics line by line with timing offset adjustments.",
+            "Docks directly on your taskbar without stealing window or keyboard focus.",
+            "Dedicated Settings window to customize size, font size, sync offset, and lyric wrapping.",
+            "Draggable overlay bar that automatically remembers your custom taskbar position.",
+            "Right-click tray and overlay menus for fast access to controls, settings, and release notes.",
+            "Offline lyric cache so previously played songs show lyrics without delay.",
+          ],
+        },
+      ],
+    },
+  ];
+
+  function renderReleaseNotes() {
+    changelogBody.textContent = "";
+    for (const release of releaseNotes) {
+      const entry = document.createElement("article");
+      entry.className = "changelog-entry";
+
+      const header = document.createElement("header");
+      header.className = "changelog-version-header";
+
+      const title = document.createElement("h3");
+      title.className = "changelog-version-title";
+      title.textContent = `v${release.version}`;
+      header.appendChild(title);
+
+      if (release.tag) {
+        const tag = document.createElement("span");
+        tag.className = "version-badge";
+        tag.textContent = release.tag;
+        header.appendChild(tag);
+      }
+
+      const date = document.createElement("span");
+      date.className = "changelog-date";
+      date.textContent = release.date;
+      header.appendChild(date);
+
+      entry.appendChild(header);
+
+      for (const section of release.sections) {
+        const group = document.createElement("div");
+        group.className = "changelog-group";
+
+        const groupTitle = document.createElement("h4");
+        groupTitle.className = "changelog-group-title";
+        groupTitle.textContent = section.title;
+        group.appendChild(groupTitle);
+
+        const list = document.createElement("ul");
+        list.className = "changelog-list";
+        for (const itemText of section.items) {
+          const li = document.createElement("li");
+          li.textContent = itemText;
+          list.appendChild(li);
+        }
+        group.appendChild(list);
+
+        entry.appendChild(group);
+      }
+
+      changelogBody.appendChild(entry);
+    }
+  }
+
+  async function openExternalUrl(url) {
+    if (!url) return;
+    try {
+      await window.__TAURI__.core.invoke("open_in_browser", { url });
+    } catch {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  }
+
+  async function loadAppInfo() {
+    try {
+      const info = await window.__TAURI__.core.invoke("get_app_info");
+      if (info?.version && appVersionEl) {
+        appVersionEl.textContent = `v${info.version}`;
+      }
+      if (info?.repository) {
+        repoUrl = info.repository;
+      }
+    } catch {
+      // Fallback already in DOM
+    }
+  }
+
+  if (openChangelogBtn && changelogModal) {
+    renderReleaseNotes();
+    openChangelogBtn.addEventListener("click", () => {
+      changelogModal.showModal();
+    });
+
+    const closeModal = () => {
+      changelogModal.close();
+    };
+
+    if (closeChangelogBtn) closeChangelogBtn.addEventListener("click", closeModal);
+    if (dismissChangelogBtn) dismissChangelogBtn.addEventListener("click", closeModal);
+
+    changelogModal.addEventListener("click", (event) => {
+      if (event.target === changelogModal) {
+        changelogModal.close();
+      }
+    });
+  }
+
+  if (openGithubBtn) {
+    openGithubBtn.addEventListener("click", () => {
+      openExternalUrl(repoUrl);
+    });
+  }
+
   const tauri = window.__TAURI__;
   if (!tauri?.core?.invoke) {
     setStatus("");
@@ -253,7 +388,15 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (tauri.event?.listen) {
     tauri.event.listen("settings-opened", loadConfig).catch(() => {});
     tauri.event.listen("config-updated", (event) => mergeExternalConfig(event.payload)).catch(() => {});
+    tauri.event.listen("navigate-section", (event) => {
+      const section = event.payload;
+      if (section === "about") {
+        document.getElementById("about-heading")?.scrollIntoView({ behavior: "smooth" });
+      } else if (section === "changelog") {
+        changelogModal?.showModal();
+      }
+    }).catch(() => {});
   }
 
-  await loadConfig();
+  await Promise.all([loadConfig(), loadAppInfo()]);
 });

@@ -1,14 +1,15 @@
 # Taskbar Lyrics
 
-Native Windows 11 taskbar-adjacent lyric overlay built with **Tauri v2 (Rust + Web Frontend)**. It is intentionally compact: album art, track title, artist, and the active synchronized lyric.
+Live lyrics on your taskbar for Windows, built with **Tauri v2 (Rust + Web Frontend)**. It is intentionally compact: album art, track title, artist, and the active synchronized lyric.
 
 ## Features
 
 - **Windows Media Session (GSMTC):** Real-time playback detection (Spotify, Apple Music, YouTube/browsers) with cover art extraction.
 - **Synchronized Lyrics:** Automatic fetching from LRCLIB with in-memory and local disk caching (`%LOCALAPPDATA%\TaskbarLyrics\lyrics_cache\`).
 - **LRC Sync Engine:** Millisecond-accurate timestamp interpolation with user offset adjustment.
-- **Taskbar Docking:** Native AppBar positioning next to the Windows 11 taskbar without taking focus or stealing keyboard input (`WS_EX_NOACTIVATE`, `WS_EX_TOOLWINDOW`, `WS_EX_LAYERED`).
-- **System Tray Controls:** Native tray menu to toggle visibility, lock/unlock position, wrap lyrics, toggle always-on-top, and reset position.
+- **Taskbar Docking:** Native AppBar positioning next to the Windows taskbar without taking focus or stealing keyboard input (`WS_EX_NOACTIVATE`, `WS_EX_TOOLWINDOW`, `WS_EX_LAYERED`).
+- **System Tray & Context Menu:** Native menus to lock/unlock position, wrap lyrics, toggle always-on-top, open Settings, view Changelog, open About, clear cache, and reset position.
+- **Settings & About:** Dedicated Settings window with real-time overlay adjustments, version info, and in-app Release Notes dialog.
 - **Minimalist Web UI:** Clean, translucent Segoe UI design with smooth crossfading lyric transitions.
 
 ## Project Structure

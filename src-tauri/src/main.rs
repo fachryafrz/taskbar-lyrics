@@ -45,13 +45,69 @@ unsafe extern "system" fn winevent_proc(
     }
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppInfo {
+    name: &'static str,
+    version: &'static str,
+    description: &'static str,
+    repository: &'static str,
+}
+
+#[tauri::command]
+fn get_app_info() -> AppInfo {
+    AppInfo {
+        name: "Taskbar Lyrics",
+        version: env!("CARGO_PKG_VERSION"),
+        description: "Live lyrics on your taskbar",
+        repository: "https://github.com/fachryafrz/taskbar-lyrics",
+    }
+}
+
+#[tauri::command]
+fn open_in_browser(url: String) -> Result<(), String> {
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        return Err("Invalid URL protocol".into());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows::core::HSTRING;
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+        let res = unsafe {
+            ShellExecuteW(
+                None,
+                &HSTRING::from("open"),
+                &HSTRING::from(url),
+                None,
+                None,
+                SW_SHOWNORMAL,
+            )
+        };
+
+        if (res.0 as isize) <= 32 {
+            return Err("Failed to launch default browser.".into());
+        }
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = url;
+        Ok(())
+    }
+}
+
 #[tauri::command]
 fn get_config(config: tauri::State<Arc<Mutex<AppConfig>>>) -> AppConfig {
     config.lock().unwrap().clone()
 }
 
-fn open_settings_window(app: &tauri::AppHandle) {
+fn open_settings_window(app: &tauri::AppHandle, section: Option<&str>) {
     let app = app.clone();
+    let target_section = section.map(|s| s.to_string());
     std::thread::spawn(move || {
         let creation_lock = app.state::<Arc<Mutex<()>>>();
         let Ok(_guard) = creation_lock.lock() else {
@@ -91,6 +147,9 @@ fn open_settings_window(app: &tauri::AppHandle) {
         let _ = window.unminimize();
         let _ = window.set_focus();
         let _ = window.emit("settings-opened", ());
+        if let Some(sec) = target_section {
+            let _ = window.emit("navigate-section", sec);
+        }
     });
 }
 
@@ -138,10 +197,6 @@ fn show_context_menu(
 ) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
         let cfg = config_state.lock().unwrap();
-        let toggle_item = CheckMenuItemBuilder::with_id("toggle", "Show Taskbar Window")
-            .checked(cfg.visible)
-            .build(&app)
-            .map_err(|e| e.to_string())?;
         let lock_item = CheckMenuItemBuilder::with_id("lock", "Lock Position")
             .checked(cfg.locked)
             .build(&app)
@@ -157,6 +212,12 @@ fn show_context_menu(
         let settings_item = MenuItemBuilder::with_id("settings", "Settings")
             .build(&app)
             .map_err(|e| e.to_string())?;
+        let changelog_item = MenuItemBuilder::with_id("changelog", "Changelog")
+            .build(&app)
+            .map_err(|e| e.to_string())?;
+        let about_item = MenuItemBuilder::with_id("about", "About")
+            .build(&app)
+            .map_err(|e| e.to_string())?;
         let reset_item = MenuItemBuilder::with_id("reset", "Reset Position")
             .build(&app)
             .map_err(|e| e.to_string())?;
@@ -168,12 +229,13 @@ fn show_context_menu(
             .map_err(|e| e.to_string())?;
 
         let context_menu = MenuBuilder::new(&app)
-            .item(&toggle_item)
             .item(&lock_item)
             .item(&wrap_item)
             .item(&aot_item)
             .separator()
             .item(&settings_item)
+            .item(&changelog_item)
+            .item(&about_item)
             .separator()
             .item(&reset_item)
             .item(&clear_cache_item)
@@ -232,11 +294,7 @@ fn save_config(
 
     // Update window positioning / visibility
     if let Some(window) = app.get_webview_window("main") {
-        if new_config.visible {
-            let _ = window.show();
-        } else {
-            let _ = window.hide();
-        }
+        let _ = window.show();
         let _ = window.set_always_on_top(new_config.always_on_top);
 
         let bounds = TaskbarManager::widget_bounds(new_config.width, new_config.height);
@@ -348,9 +406,6 @@ fn build_tray_menu(
     app: &tauri::AppHandle,
     config: &AppConfig,
 ) -> tauri::Result<(tauri::menu::Menu<tauri::Wry>, TrayMenuChecks)> {
-    let toggle_item = CheckMenuItemBuilder::with_id("toggle", "Show Taskbar Window")
-        .checked(config.visible)
-        .build(app)?;
     let lock_item = CheckMenuItemBuilder::with_id("lock", "Lock Position")
         .checked(config.locked)
         .build(app)?;
@@ -361,6 +416,8 @@ fn build_tray_menu(
         .checked(config.always_on_top)
         .build(app)?;
     let settings_item = MenuItemBuilder::with_id("settings", "Settings").build(app)?;
+    let changelog_item = MenuItemBuilder::with_id("changelog", "Changelog").build(app)?;
+    let about_item = MenuItemBuilder::with_id("about", "About").build(app)?;
     let reset_item = MenuItemBuilder::with_id("reset", "Reset Position").build(app)?;
     let clear_cache_item = MenuItemBuilder::with_id("clear_cache", "Clear Cache").build(app)?;
     let exit_item = MenuItemBuilder::with_id("exit", "Exit").build(app)?;
@@ -370,12 +427,13 @@ fn build_tray_menu(
         always_on_top: aot_item.clone(),
     };
     let menu = MenuBuilder::new(app)
-        .item(&toggle_item)
         .item(&lock_item)
         .item(&wrap_item)
         .item(&aot_item)
         .separator()
         .item(&settings_item)
+        .item(&changelog_item)
+        .item(&about_item)
         .separator()
         .item(&reset_item)
         .item(&clear_cache_item)
@@ -405,7 +463,15 @@ fn handle_menu_action(
     tray_menu_checks: &Arc<Mutex<Option<TrayMenuChecks>>>,
 ) {
     if id == "settings" {
-        open_settings_window(app);
+        open_settings_window(app, None);
+        return;
+    }
+    if id == "about" {
+        open_settings_window(app, Some("about"));
+        return;
+    }
+    if id == "changelog" {
+        open_settings_window(app, Some("changelog"));
         return;
     }
 
@@ -413,17 +479,6 @@ fn handle_menu_action(
     let window = app.get_webview_window("main");
 
     match id {
-        "toggle" => {
-            cfg.visible = !cfg.visible;
-            ConfigManager::save(&cfg);
-            if let Some(w) = window {
-                if cfg.visible {
-                    let _ = w.show();
-                } else {
-                    let _ = w.hide();
-                }
-            }
-        }
         "lock" => {
             cfg.locked = !cfg.locked;
             ConfigManager::save(&cfg);
@@ -501,6 +556,8 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             get_config,
+            get_app_info,
+            open_in_browser,
             get_current_media,
             save_config,
             apply_settings,
@@ -569,9 +626,7 @@ fn main() {
                 });
             }
 
-            if config_for_setup.visible {
-                let _ = window.show();
-            }
+            let _ = window.show();
 
             // Setup System Tray
             let (tray_menu, check_items) = build_tray_menu(app.handle(), &config_for_setup)?;

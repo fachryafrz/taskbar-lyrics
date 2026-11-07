@@ -104,12 +104,22 @@
               <div class="about-details">
                 <div class="about-title-row">
                   <span class="about-app-name">Taskbar Lyrics</span>
-                  <span id="app-version" class="version-badge" aria-label="Application version">v0.1.0</span>
+                  <span id="app-version" class="version-badge" aria-label="Application version">v0.1.1</span>
                 </div>
                 <p class="about-description">Live lyrics on your taskbar</p>
+                <div class="update-status-row">
+                  <span id="update-status-badge" class="update-status-pill" hidden></span>
+                  <span id="update-status-text" class="update-status-text">Up to date</span>
+                </div>
               </div>
             </div>
             <div class="about-actions">
+              <button id="check-update-btn" type="button" class="about-action-btn">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                </svg>
+                <span id="check-update-btn-text">Check for Updates</span>
+              </button>
               <button id="open-changelog-btn" type="button" class="about-action-btn">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -160,6 +170,47 @@
       </div>
       <footer class="modal-footer">
         <button id="dismiss-changelog-btn" type="button" class="apply-button">Done</button>
+      </footer>
+    </div>
+  </dialog>
+
+  <dialog id="update-modal" class="changelog-modal" aria-labelledby="update-title">
+    <div class="modal-card">
+      <header class="modal-header">
+        <div>
+          <div class="modal-title-row">
+            <h2 id="update-title">Update Available</h2>
+            <span id="update-modal-badge" class="version-badge version-badge-new">v0.0.0</span>
+          </div>
+          <p id="update-modal-subtitle" class="modal-subtitle">A new version of Taskbar Lyrics is ready to download.</p>
+        </div>
+        <button id="close-update-btn" type="button" class="modal-icon-button" aria-label="Close">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </header>
+      <div id="update-body" class="modal-body" tabindex="0">
+        <div class="update-version-card">
+          <div class="update-version-col">
+            <span class="update-col-label">Installed</span>
+            <span id="update-installed-version" class="update-col-value">v0.1.0</span>
+          </div>
+          <div class="update-version-arrow" aria-hidden="true">→</div>
+          <div class="update-version-col">
+            <span class="update-col-label">Latest Release</span>
+            <span id="update-new-version" class="update-col-value highlight">v0.2.0</span>
+          </div>
+        </div>
+        <div class="update-notes-section">
+          <h3 id="update-release-name" class="update-release-title">Release Notes</h3>
+          <div id="update-release-body" class="update-release-body"></div>
+        </div>
+      </div>
+      <footer class="modal-footer">
+        <button id="dismiss-update-btn" type="button" class="secondary-button">Later</button>
+        <button id="download-update-btn" type="button" class="apply-button">Download Update</button>
       </footer>
     </div>
   </dialog>

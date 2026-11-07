@@ -290,9 +290,31 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const releaseNotes = [
     {
+      version: "0.1.1",
+      date: "November 2026",
+      tag: "Current",
+      sections: [
+        {
+          title: "What's New",
+          items: [
+            "Notifications in the right-click menu and tray whenever a new update is ready.",
+            "In-app update details dialog to read release notes and download with one click.",
+            "Manual 'Check for Updates' button in the Settings window.",
+          ],
+        },
+        {
+          title: "Improvements",
+          items: [
+            "Official Taskbar Lyrics app icon on the Windows setup installer wizard.",
+            "Instant and bandwidth-friendly update checking using smart caching.",
+          ],
+        },
+      ],
+    },
+    {
       version: "0.1.0",
       date: "Initial Preview",
-      tag: "Current",
+      tag: null,
       sections: [
         {
           title: "What's New",
@@ -386,6 +408,121 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  // Update Modal & Checking Logic
+  const checkUpdateBtn = document.getElementById("check-update-btn");
+  const checkUpdateBtnText = document.getElementById("check-update-btn-text");
+  const updateStatusText = document.getElementById("update-status-text");
+  const updateStatusBadge = document.getElementById("update-status-badge");
+  const updateModal = document.getElementById("update-modal");
+  const closeUpdateBtn = document.getElementById("close-update-btn");
+  const dismissUpdateBtn = document.getElementById("dismiss-update-btn");
+  const downloadUpdateBtn = document.getElementById("download-update-btn");
+  const updateModalBadge = document.getElementById("update-modal-badge");
+  const updateInstalledVersion = document.getElementById("update-installed-version");
+  const updateNewVersion = document.getElementById("update-new-version");
+  const updateReleaseName = document.getElementById("update-release-name");
+  const updateReleaseBody = document.getElementById("update-release-body");
+
+  let latestUpdateInfo = null;
+  let isCheckingUpdate = false;
+
+  function showUpdateModal(info) {
+    if (!updateModal || !info) return;
+    if (updateModalBadge) updateModalBadge.textContent = `v${info.latestVersion}`;
+    if (updateInstalledVersion) updateInstalledVersion.textContent = `v${info.currentVersion}`;
+    if (updateNewVersion) updateNewVersion.textContent = `v${info.latestVersion}`;
+    if (updateReleaseName) updateReleaseName.textContent = info.releaseName || `Taskbar Lyrics v${info.latestVersion}`;
+    if (updateReleaseBody) {
+      updateReleaseBody.textContent = info.releaseNotes?.trim() || "No release notes provided for this version.";
+    }
+    updateModal.showModal();
+  }
+
+  function updateUIStatus(info) {
+    if (!info) return;
+    latestUpdateInfo = info;
+
+    if (info.updateAvailable) {
+      if (updateStatusBadge) {
+        updateStatusBadge.hidden = false;
+        updateStatusBadge.className = "update-status-pill has-update";
+        updateStatusBadge.textContent = "New";
+      }
+      if (updateStatusText) {
+        updateStatusText.textContent = `Update available: v${info.latestVersion}`;
+      }
+      if (checkUpdateBtnText) {
+        checkUpdateBtnText.textContent = "View Update";
+      }
+    } else {
+      if (updateStatusBadge) {
+        updateStatusBadge.hidden = true;
+      }
+      if (updateStatusText) {
+        updateStatusText.textContent = "Up to date";
+      }
+      if (checkUpdateBtnText) {
+        checkUpdateBtnText.textContent = "Check for Updates";
+      }
+    }
+  }
+
+  async function performUpdateCheck(manual = false) {
+    if (isCheckingUpdate) return;
+    isCheckingUpdate = true;
+    if (updateStatusText) updateStatusText.textContent = "Checking for updates...";
+    if (checkUpdateBtn) checkUpdateBtn.disabled = true;
+    if (checkUpdateBtnText) checkUpdateBtnText.textContent = "Checking...";
+
+    try {
+      const info = await window.__TAURI__.core.invoke("check_for_updates");
+      updateUIStatus(info);
+      if (manual && info?.updateAvailable) {
+        showUpdateModal(info);
+      } else if (manual && !info?.updateAvailable) {
+        if (updateStatusText) updateStatusText.textContent = "You're on the latest version.";
+      }
+    } catch {
+      if (updateStatusText) updateStatusText.textContent = "Could not check for updates.";
+    } finally {
+      isCheckingUpdate = false;
+      if (checkUpdateBtn) checkUpdateBtn.disabled = false;
+      if (!latestUpdateInfo?.updateAvailable && checkUpdateBtnText) {
+        checkUpdateBtnText.textContent = "Check for Updates";
+      }
+    }
+  }
+
+  if (checkUpdateBtn) {
+    checkUpdateBtn.addEventListener("click", () => {
+      if (latestUpdateInfo?.updateAvailable) {
+        showUpdateModal(latestUpdateInfo);
+      } else {
+        performUpdateCheck(true);
+      }
+    });
+  }
+
+  if (updateModal) {
+    const closeUpdate = () => updateModal.close();
+    if (closeUpdateBtn) closeUpdateBtn.addEventListener("click", closeUpdate);
+    if (dismissUpdateBtn) dismissUpdateBtn.addEventListener("click", closeUpdate);
+    if (downloadUpdateBtn) {
+      downloadUpdateBtn.addEventListener("click", () => {
+        if (latestUpdateInfo?.htmlUrl) {
+          openExternalUrl(latestUpdateInfo.htmlUrl);
+        } else {
+          openExternalUrl(repoUrl);
+        }
+      });
+    }
+    updateModal.addEventListener("click", (event) => {
+      if (event.target === updateModal) {
+        updateModal.close();
+      }
+    });
+  }
+
   if (openChangelogBtn && changelogModal) {
     renderReleaseNotes();
     openChangelogBtn.addEventListener("click", () => {
@@ -422,15 +559,33 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (tauri.event?.listen) {
     tauri.event.listen("settings-opened", loadConfig).catch(() => {});
     tauri.event.listen("config-updated", (event) => mergeExternalConfig(event.payload)).catch(() => {});
+    tauri.event.listen("update-status", (event) => updateUIStatus(event.payload)).catch(() => {});
     tauri.event.listen("navigate-section", (event) => {
       const section = event.payload;
       if (section === "about") {
         document.getElementById("about-heading")?.scrollIntoView({ behavior: "smooth" });
       } else if (section === "changelog") {
         changelogModal?.showModal();
+      } else if (section === "update") {
+        if (latestUpdateInfo?.updateAvailable) {
+          showUpdateModal(latestUpdateInfo);
+        } else {
+          performUpdateCheck(true);
+        }
       }
     }).catch(() => {});
   }
 
-  await Promise.all([loadConfig(), loadAppInfo()]);
+  async function loadInitialUpdateStatus() {
+    try {
+      const cached = await window.__TAURI__.core.invoke("get_update_info");
+      if (cached) {
+        updateUIStatus(cached);
+      }
+    } catch {
+      // Ignore if not yet fetched
+    }
+  }
+
+  await Promise.all([loadConfig(), loadAppInfo(), loadInitialUpdateStatus()]);
 });

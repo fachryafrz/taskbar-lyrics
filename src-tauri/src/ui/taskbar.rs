@@ -219,8 +219,8 @@ impl TaskbarManager {
         let (x, y) = match edge {
             ABE_LEFT => (taskbar_rect.left + 4, taskbar_rect.top + 100),
             ABE_RIGHT => (taskbar_rect.right - width - 4, taskbar_rect.top + 100),
-            ABE_TOP => (taskbar_rect.left + 180, taskbar_rect.top + ((taskbar_h - height) / 2)),
-            _ => (taskbar_rect.left + 180, taskbar_rect.top + ((taskbar_h - height) / 2)),
+            ABE_TOP => (taskbar_rect.left + 8, taskbar_rect.top + ((taskbar_h - height) / 2)),
+            _ => (taskbar_rect.left + 8, taskbar_rect.top + ((taskbar_h - height) / 2)),
         };
 
         WidgetBounds {

@@ -5,19 +5,28 @@ mod lyrics;
 mod media;
 mod ui;
 
-use crate::core::{AppConfig, ConfigManager};
+use crate::core::{AppConfig, ConfigManager, SettingsUpdate};
 use crate::media::{MediaSessionWorker, MediaUpdatePayload};
 use crate::ui::TaskbarManager;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::{Arc, Mutex};
-use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder};
+use tauri::menu::{CheckMenuItemBuilder, ContextMenu, MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
-use tauri::{Emitter, LogicalSize, Manager, PhysicalPosition};
+use tauri::{
+    Emitter, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder,
+};
+use tauri_plugin_autostart::ManagerExt;
 
 #[cfg(target_os = "windows")]
 static OVERLAY_HWND: AtomicIsize = AtomicIsize::new(0);
 #[cfg(target_os = "windows")]
 static ALWAYS_ON_TOP: AtomicBool = AtomicBool::new(true);
+
+struct TrayMenuChecks {
+    wrap: tauri::menu::CheckMenuItem<tauri::Wry>,
+    always_on_top: tauri::menu::CheckMenuItem<tauri::Wry>,
+    run_on_startup: tauri::menu::CheckMenuItem<tauri::Wry>,
+}
 
 #[cfg(target_os = "windows")]
 unsafe extern "system" fn winevent_proc(
@@ -38,9 +47,119 @@ unsafe extern "system" fn winevent_proc(
     }
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppInfo {
+    name: &'static str,
+    version: &'static str,
+    description: &'static str,
+    repository: &'static str,
+}
+
 #[tauri::command]
-fn get_config(config: tauri::State<Arc<Mutex<AppConfig>>>) -> AppConfig {
-    config.lock().unwrap().clone()
+fn get_app_info() -> AppInfo {
+    AppInfo {
+        name: "Taskbar Lyrics",
+        version: env!("CARGO_PKG_VERSION"),
+        description: "Live lyrics on your taskbar",
+        repository: "https://github.com/fachryafrz/taskbar-lyrics",
+    }
+}
+
+#[tauri::command]
+fn open_in_browser(url: String) -> Result<(), String> {
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        return Err("Invalid URL protocol".into());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows::core::HSTRING;
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+        let res = unsafe {
+            ShellExecuteW(
+                None,
+                &HSTRING::from("open"),
+                &HSTRING::from(url),
+                None,
+                None,
+                SW_SHOWNORMAL,
+            )
+        };
+
+        if (res.0 as isize) <= 32 {
+            return Err("Failed to launch default browser.".into());
+        }
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = url;
+        Ok(())
+    }
+}
+
+#[tauri::command]
+fn get_config(
+    app: tauri::AppHandle,
+    config: tauri::State<Arc<Mutex<AppConfig>>>,
+) -> AppConfig {
+    let mut cfg = config.lock().unwrap().clone();
+    if let Ok(enabled) = app.autolaunch().is_enabled() {
+        cfg.run_on_startup = enabled;
+    }
+    cfg
+}
+
+fn open_settings_window(app: &tauri::AppHandle, section: Option<&str>) {
+    let app = app.clone();
+    let target_section = section.map(|s| s.to_string());
+    std::thread::spawn(move || {
+        let creation_lock = app.state::<Arc<Mutex<()>>>();
+        let Ok(_guard) = creation_lock.lock() else {
+            return;
+        };
+
+        let window = match app.get_webview_window("settings") {
+            Some(window) => window,
+            None => match WebviewWindowBuilder::new(
+                &app,
+                "settings",
+                WebviewUrl::App("settings.html".into()),
+            )
+            .title("Taskbar Lyrics Settings")
+            .inner_size(520.0, 520.0)
+            .decorations(true)
+            .transparent(false)
+            .always_on_top(false)
+            .skip_taskbar(false)
+            .resizable(true)
+            .shadow(true)
+            .additional_browser_args(
+                "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disk-cache-size=33554432 --media-cache-size=16777216",
+            )
+            .visible(false)
+            .build()
+            {
+                Ok(window) => window,
+                Err(error) => {
+                    eprintln!("Failed to create Settings window: {error}");
+                    return;
+                }
+            },
+        };
+
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+        let _ = window.emit("settings-opened", ());
+        if let Some(sec) = target_section {
+            let _ = window.emit("navigate-section", sec);
+        }
+    });
 }
 
 #[tauri::command]
@@ -81,6 +200,126 @@ fn save_window_position(
 }
 
 #[tauri::command]
+fn show_context_menu(
+    app: tauri::AppHandle,
+    config_state: tauri::State<Arc<Mutex<AppConfig>>>,
+) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        let cfg = config_state.lock().unwrap();
+        let lock_item = CheckMenuItemBuilder::with_id("lock", "Lock Position")
+            .checked(cfg.locked)
+            .build(&app)
+            .map_err(|e| e.to_string())?;
+        let wrap_item = CheckMenuItemBuilder::with_id("wrap", "Wrap Long Lyrics")
+            .checked(cfg.wrap_long_lyrics)
+            .build(&app)
+            .map_err(|e| e.to_string())?;
+        let aot_item = CheckMenuItemBuilder::with_id("always_on_top", "Always on top")
+            .checked(cfg.always_on_top)
+            .build(&app)
+            .map_err(|e| e.to_string())?;
+        let autostart_item = CheckMenuItemBuilder::with_id("run_on_startup", "Run on Startup")
+            .checked(cfg.run_on_startup)
+            .build(&app)
+            .map_err(|e| e.to_string())?;
+        let settings_item = MenuItemBuilder::with_id("settings", "Settings")
+            .build(&app)
+            .map_err(|e| e.to_string())?;
+        let changelog_item = MenuItemBuilder::with_id("changelog", "Changelog")
+            .build(&app)
+            .map_err(|e| e.to_string())?;
+        let about_item = MenuItemBuilder::with_id("about", "About")
+            .build(&app)
+            .map_err(|e| e.to_string())?;
+        let exit_item = MenuItemBuilder::with_id("exit", "Exit")
+            .build(&app)
+            .map_err(|e| e.to_string())?;
+
+        let context_menu = MenuBuilder::new(&app)
+            .item(&lock_item)
+            .item(&wrap_item)
+            .item(&aot_item)
+            .item(&autostart_item)
+            .separator()
+            .item(&settings_item)
+            .item(&changelog_item)
+            .item(&about_item)
+            .separator()
+            .item(&exit_item)
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        context_menu.popup(window.as_ref().window().clone()).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn perform_cache_clear() {
+    if let Some(base) = dirs::data_local_dir() {
+        // 1. Clear lyrics cache (new and legacy)
+        for app_dir_name in &["TaskbarLyrics", "Lyrix"] {
+            let cache_dir = base.join(app_dir_name).join("lyrics_cache");
+            if cache_dir.exists() {
+                let _ = std::fs::remove_dir_all(&cache_dir);
+                let _ = std::fs::create_dir_all(&cache_dir);
+            }
+        }
+
+        // 2. Clear WebView2 browser/EBWebView cache (new and legacy)
+        for identifier in &["com.fachryafrz.taskbarlyrics", "com.lyrix.taskbar"] {
+            let webview_cache = base.join(identifier).join("EBWebView");
+            for sub in &["Default/Cache", "Default/Code Cache", "Default/GPUCache"] {
+                let path = webview_cache.join(sub);
+                if path.exists() {
+                    let _ = std::fs::remove_dir_all(&path);
+                }
+            }
+        }
+    }
+}
+
+fn perform_reset_position(
+    app: &tauri::AppHandle,
+    config_state: &Arc<Mutex<AppConfig>>,
+) -> Result<AppConfig, String> {
+    let mut cfg = config_state
+        .lock()
+        .map_err(|_| "Configuration is unavailable.".to_string())?;
+    cfg.taskbar_offset_x = 0;
+    cfg.taskbar_offset_y = 0;
+    ConfigManager::save(&cfg);
+    if let Some(w) = app.get_webview_window("main") {
+        let bounds = TaskbarManager::widget_bounds(cfg.width, cfg.height);
+        let _ = w.set_position(PhysicalPosition::new(bounds.x, bounds.y));
+        #[cfg(target_os = "windows")]
+        if let Ok(hwnd) = w.hwnd() {
+            let hwnd = windows::Win32::Foundation::HWND(hwnd.0);
+            TaskbarManager::attach_to_taskbar(hwnd);
+            TaskbarManager::ensure_topmost(hwnd, cfg.always_on_top);
+        }
+    }
+    let updated = cfg.clone();
+    drop(cfg);
+    let _ = app.emit("config-updated", updated.clone());
+    Ok(updated)
+}
+
+#[tauri::command]
+fn reset_position(
+    app: tauri::AppHandle,
+    config_state: tauri::State<Arc<Mutex<AppConfig>>>,
+) -> Result<AppConfig, String> {
+    perform_reset_position(&app, &config_state)
+}
+
+#[tauri::command]
+fn clear_cache(app: tauri::AppHandle) -> Result<(), String> {
+    perform_cache_clear();
+    let _ = app.emit("clear-cache", ());
+    Ok(())
+}
+
+#[tauri::command]
 fn save_config(
     new_config: AppConfig,
     config_state: tauri::State<Arc<Mutex<AppConfig>>>,
@@ -94,11 +333,7 @@ fn save_config(
 
     // Update window positioning / visibility
     if let Some(window) = app.get_webview_window("main") {
-        if new_config.visible {
-            let _ = window.show();
-        } else {
-            let _ = window.hide();
-        }
+        let _ = window.show();
         let _ = window.set_always_on_top(new_config.always_on_top);
 
         let bounds = TaskbarManager::widget_bounds(new_config.width, new_config.height);
@@ -116,6 +351,56 @@ fn save_config(
     }
 
     Ok(())
+}
+
+#[tauri::command]
+fn apply_settings(
+    update: SettingsUpdate,
+    config_state: tauri::State<Arc<Mutex<AppConfig>>>,
+    tray_menu_checks: tauri::State<Arc<Mutex<Option<TrayMenuChecks>>>>,
+    app: tauri::AppHandle,
+) -> Result<AppConfig, String> {
+    let mut current = config_state
+        .lock()
+        .map_err(|_| "Configuration is unavailable.".to_string())?;
+    ConfigManager::apply_settings_update(&mut current, &update)?;
+    let updated = current.clone();
+    drop(current);
+
+    if let Some(run_on_startup) = update.run_on_startup {
+        let autolaunch = app.autolaunch();
+        if run_on_startup {
+            let _ = autolaunch.enable();
+        } else {
+            let _ = autolaunch.disable();
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    ALWAYS_ON_TOP.store(updated.always_on_top, Ordering::Relaxed);
+
+    if let Some(window) = app.get_webview_window("main") {
+        let bounds = TaskbarManager::widget_bounds(updated.width, updated.height);
+        let x = bounds.x + updated.taskbar_offset_x;
+        let y = bounds.y + updated.taskbar_offset_y;
+        let _ = window.set_position(PhysicalPosition::new(x, y));
+        let _ = window.set_size(LogicalSize::new(
+            updated.width as f64,
+            updated.height as f64,
+        ));
+        let _ = window.set_always_on_top(updated.always_on_top);
+
+        #[cfg(target_os = "windows")]
+        if let Ok(hwnd) = window.hwnd() {
+            let hwnd = windows::Win32::Foundation::HWND(hwnd.0);
+            TaskbarManager::attach_to_taskbar(hwnd);
+            TaskbarManager::ensure_topmost(hwnd, updated.always_on_top);
+        }
+    }
+
+    sync_tray_menu_checks(&tray_menu_checks, &updated);
+    let _ = app.emit("config-updated", updated.clone());
+    Ok(updated)
 }
 
 fn apply_win32_window_styles(window: &tauri::WebviewWindow, _locked: bool) {
@@ -165,25 +450,195 @@ fn apply_win32_window_styles(window: &tauri::WebviewWindow, _locked: bool) {
     }
 }
 
+fn build_tray_menu(
+    app: &tauri::AppHandle,
+    config: &AppConfig,
+) -> tauri::Result<(tauri::menu::Menu<tauri::Wry>, TrayMenuChecks)> {
+    let lock_item = CheckMenuItemBuilder::with_id("lock", "Lock Position")
+        .checked(config.locked)
+        .build(app)?;
+    let wrap_item = CheckMenuItemBuilder::with_id("wrap", "Wrap Long Lyrics")
+        .checked(config.wrap_long_lyrics)
+        .build(app)?;
+    let aot_item = CheckMenuItemBuilder::with_id("always_on_top", "Always on top")
+        .checked(config.always_on_top)
+        .build(app)?;
+    let autostart_item = CheckMenuItemBuilder::with_id("run_on_startup", "Run on Startup")
+        .checked(config.run_on_startup)
+        .build(app)?;
+    let settings_item = MenuItemBuilder::with_id("settings", "Settings").build(app)?;
+    let changelog_item = MenuItemBuilder::with_id("changelog", "Changelog").build(app)?;
+    let about_item = MenuItemBuilder::with_id("about", "About").build(app)?;
+    let exit_item = MenuItemBuilder::with_id("exit", "Exit").build(app)?;
+
+    let checks = TrayMenuChecks {
+        wrap: wrap_item.clone(),
+        always_on_top: aot_item.clone(),
+        run_on_startup: autostart_item.clone(),
+    };
+    let menu = MenuBuilder::new(app)
+        .item(&lock_item)
+        .item(&wrap_item)
+        .item(&aot_item)
+        .item(&autostart_item)
+        .separator()
+        .item(&settings_item)
+        .item(&changelog_item)
+        .item(&about_item)
+        .separator()
+        .item(&exit_item)
+        .build()?;
+
+    Ok((menu, checks))
+}
+
+fn sync_tray_menu_checks(
+    tray_menu_checks: &Arc<Mutex<Option<TrayMenuChecks>>>,
+    config: &AppConfig,
+) {
+    if let Ok(checks) = tray_menu_checks.lock() {
+        if let Some(checks) = checks.as_ref() {
+            let _ = checks.wrap.set_checked(config.wrap_long_lyrics);
+            let _ = checks.always_on_top.set_checked(config.always_on_top);
+            let _ = checks.run_on_startup.set_checked(config.run_on_startup);
+        }
+    }
+}
+
+fn handle_menu_action(
+    app: &tauri::AppHandle,
+    id: &str,
+    config_state: &Arc<Mutex<AppConfig>>,
+    tray_menu_checks: &Arc<Mutex<Option<TrayMenuChecks>>>,
+) {
+    if id == "settings" {
+        open_settings_window(app, None);
+        return;
+    }
+    if id == "about" {
+        open_settings_window(app, Some("about"));
+        return;
+    }
+    if id == "changelog" {
+        open_settings_window(app, Some("changelog"));
+        return;
+    }
+
+    let mut cfg = config_state.lock().unwrap();
+    let window = app.get_webview_window("main");
+
+    match id {
+        "lock" => {
+            cfg.locked = !cfg.locked;
+            ConfigManager::save(&cfg);
+            if let Some(w) = window {
+                apply_win32_window_styles(&w, cfg.locked);
+            }
+            let _ = app.emit("config-updated", cfg.clone());
+        }
+        "wrap" => {
+            cfg.wrap_long_lyrics = !cfg.wrap_long_lyrics;
+            ConfigManager::save(&cfg);
+            let _ = app.emit("config-updated", cfg.clone());
+        }
+        "always_on_top" => {
+            cfg.always_on_top = !cfg.always_on_top;
+            ConfigManager::save(&cfg);
+            #[cfg(target_os = "windows")]
+            ALWAYS_ON_TOP.store(cfg.always_on_top, Ordering::Relaxed);
+            if let Some(w) = window {
+                let _ = w.set_always_on_top(cfg.always_on_top);
+                #[cfg(target_os = "windows")]
+                if let Ok(hwnd) = w.hwnd() {
+                    let hwnd = windows::Win32::Foundation::HWND(hwnd.0);
+                    TaskbarManager::ensure_topmost(hwnd, cfg.always_on_top);
+                }
+            }
+            let _ = app.emit("config-updated", cfg.clone());
+        }
+        "run_on_startup" => {
+            cfg.run_on_startup = !cfg.run_on_startup;
+            let autolaunch = app.autolaunch();
+            if cfg.run_on_startup {
+                let _ = autolaunch.enable();
+            } else {
+                let _ = autolaunch.disable();
+            }
+            ConfigManager::save(&cfg);
+            let _ = app.emit("config-updated", cfg.clone());
+        }
+        "reset" => {
+            cfg.taskbar_offset_x = 0;
+            cfg.taskbar_offset_y = 0;
+            ConfigManager::save(&cfg);
+            if let Some(w) = window {
+                let bounds = TaskbarManager::widget_bounds(cfg.width, cfg.height);
+                let _ = w.set_position(PhysicalPosition::new(bounds.x, bounds.y));
+                #[cfg(target_os = "windows")]
+                if let Ok(hwnd) = w.hwnd() {
+                    let hwnd = windows::Win32::Foundation::HWND(hwnd.0);
+                    TaskbarManager::attach_to_taskbar(hwnd);
+                    TaskbarManager::ensure_topmost(hwnd, cfg.always_on_top);
+                }
+            }
+        }
+        "clear_cache" => {
+            perform_cache_clear();
+            let _ = app.emit("clear-cache", ());
+        }
+        "exit" => {
+            std::process::exit(0);
+        }
+        _ => {}
+    }
+
+    let updated = cfg.clone();
+    drop(cfg);
+    sync_tray_menu_checks(tray_menu_checks, &updated);
+}
+
 fn main() {
     let config = ConfigManager::load();
     let config_state = Arc::new(Mutex::new(config.clone()));
+    let tray_menu_checks: Arc<Mutex<Option<TrayMenuChecks>>> = Arc::new(Mutex::new(None));
+    let settings_window_creation = Arc::new(Mutex::new(()));
     let media_worker = Arc::new(MediaSessionWorker::new());
 
     let config_for_setup = config.clone();
     let config_state_for_tray = Arc::clone(&config_state);
+    let tray_menu_checks_for_setup = Arc::clone(&tray_menu_checks);
     let worker_for_run = Arc::clone(&media_worker);
 
     tauri::Builder::default()
         .manage(config_state)
+        .manage(Arc::clone(&tray_menu_checks))
+        .manage(settings_window_creation)
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![]),
+        ))
         .invoke_handler(tauri::generate_handler![
             get_config,
+            get_app_info,
+            open_in_browser,
             get_current_media,
             save_config,
+            apply_settings,
             move_window_by,
-            save_window_position
+            save_window_position,
+            show_context_menu,
+            reset_position,
+            clear_cache
         ])
+        .on_window_event(|window, event| {
+            if window.label() == "settings" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .setup(move |app| {
             let window = app.get_webview_window("main").expect("main window missing");
 
@@ -236,102 +691,34 @@ fn main() {
                 });
             }
 
-            if config_for_setup.visible {
-                let _ = window.show();
+            let _ = window.show();
+
+            // Synchronize autostart on application startup
+            let autolaunch = app.autolaunch();
+            if config_for_setup.run_on_startup {
+                let _ = autolaunch.enable();
             }
 
             // Setup System Tray
-            let toggle_item = CheckMenuItemBuilder::with_id("toggle", "Show Taskbar Window")
-                .checked(config_for_setup.visible)
-                .build(app)?;
-            let lock_item = CheckMenuItemBuilder::with_id("lock", "Lock Position")
-                .checked(config_for_setup.locked)
-                .build(app)?;
-            let wrap_item = CheckMenuItemBuilder::with_id("wrap", "Wrap Long Lyrics")
-                .checked(config_for_setup.wrap_long_lyrics)
-                .build(app)?;
-            let aot_item = CheckMenuItemBuilder::with_id("always_on_top", "Always on top")
-                .checked(config_for_setup.always_on_top)
-                .build(app)?;
-            let reset_item = MenuItemBuilder::with_id("reset", "Reset Position").build(app)?;
-            let exit_item = MenuItemBuilder::with_id("exit", "Exit").build(app)?;
+            let (tray_menu, check_items) = build_tray_menu(app.handle(), &config_for_setup)?;
+            if let Ok(mut checks) = tray_menu_checks_for_setup.lock() {
+                *checks = Some(check_items);
+            }
 
-            let tray_menu = MenuBuilder::new(app)
-                .item(&toggle_item)
-                .item(&lock_item)
-                .item(&wrap_item)
-                .item(&aot_item)
-                .separator()
-                .item(&reset_item)
-                .separator()
-                .item(&exit_item)
-                .build()?;
+            let config_state_for_menu = Arc::clone(&config_state_for_tray);
+            let tray_checks_for_menu = Arc::clone(&tray_menu_checks_for_setup);
+            app.on_menu_event(move |app_handle, event| {
+                handle_menu_action(
+                    app_handle,
+                    event.id().as_ref(),
+                    &config_state_for_menu,
+                    &tray_checks_for_menu,
+                );
+            });
 
-            let app_handle_for_tray = app.handle().clone();
             let mut tray_builder = TrayIconBuilder::new()
                 .menu(&tray_menu)
-                .tooltip("Lyrix - Taskbar Lyrics")
-                .on_menu_event(move |_app, event| {
-                    let id = event.id().as_ref();
-                    let mut cfg = config_state_for_tray.lock().unwrap();
-                    let window = app_handle_for_tray.get_webview_window("main");
-
-                    match id {
-                        "toggle" => {
-                            cfg.visible = !cfg.visible;
-                            ConfigManager::save(&cfg);
-                            if let Some(w) = window {
-                                if cfg.visible { let _ = w.show(); } else { let _ = w.hide(); }
-                            }
-                        }
-                        "lock" => {
-                            cfg.locked = !cfg.locked;
-                            ConfigManager::save(&cfg);
-                            if let Some(w) = window {
-                                apply_win32_window_styles(&w, cfg.locked);
-                            }
-                            let _ = app_handle_for_tray.emit("config-updated", cfg.clone());
-                        }
-                        "wrap" => {
-                            cfg.wrap_long_lyrics = !cfg.wrap_long_lyrics;
-                            ConfigManager::save(&cfg);
-                            let _ = app_handle_for_tray.emit("config-updated", cfg.clone());
-                        }
-                        "always_on_top" => {
-                            cfg.always_on_top = !cfg.always_on_top;
-                            ConfigManager::save(&cfg);
-                            #[cfg(target_os = "windows")]
-                            ALWAYS_ON_TOP.store(cfg.always_on_top, Ordering::Relaxed);
-                            if let Some(w) = window {
-                                let _ = w.set_always_on_top(cfg.always_on_top);
-                                #[cfg(target_os = "windows")]
-                                if let Ok(hwnd) = w.hwnd() {
-                                    let hwnd = windows::Win32::Foundation::HWND(hwnd.0);
-                                    TaskbarManager::ensure_topmost(hwnd, cfg.always_on_top);
-                                }
-                            }
-                        }
-                        "reset" => {
-                            cfg.taskbar_offset_x = 180;
-                            cfg.taskbar_offset_y = 0;
-                            ConfigManager::save(&cfg);
-                            if let Some(w) = window {
-                                let bounds = TaskbarManager::widget_bounds(cfg.width, cfg.height);
-                                let _ = w.set_position(PhysicalPosition::new(bounds.x + 180, bounds.y));
-                                #[cfg(target_os = "windows")]
-                                if let Ok(hwnd) = w.hwnd() {
-                                    let hwnd = windows::Win32::Foundation::HWND(hwnd.0);
-                                    TaskbarManager::attach_to_taskbar(hwnd);
-                                    TaskbarManager::ensure_topmost(hwnd, cfg.always_on_top);
-                                }
-                            }
-                        }
-                        "exit" => {
-                            std::process::exit(0);
-                        }
-                        _ => {}
-                    }
-                });
+                .tooltip("Taskbar Lyrics");
 
             if let Some(icon) = app.default_window_icon() {
                 tray_builder = tray_builder.icon(icon.clone());

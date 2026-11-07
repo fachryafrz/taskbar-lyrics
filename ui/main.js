@@ -1,4 +1,4 @@
-// Lyrix Overlay Client Logic (High Precision Sync & LRCLIB Matching)
+// Taskbar Lyrics Overlay Client Logic (High Precision Sync & LRCLIB Matching)
 document.addEventListener("DOMContentLoaded", () => {
   const overlay = document.getElementById("overlay");
   const albumArtContainer = document.getElementById("album-art-container");
@@ -15,6 +15,14 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentTrackKey = "";
   let currentLyrics = []; // [{ timeMs, text }]
   let lyricsCache = new Map();
+
+  function cacheLyrics(key, parsed) {
+    if (lyricsCache.size >= 100) {
+      const oldest = lyricsCache.keys().next().value;
+      if (oldest) lyricsCache.delete(oldest);
+    }
+    lyricsCache.set(key, parsed);
+  }
 
   let track = {
     title: "",
@@ -56,6 +64,21 @@ document.addEventListener("DOMContentLoaded", () => {
       if (window.__TAURI__ && window.__TAURI__.core) {
         window.__TAURI__.core.invoke("save_window_position");
       }
+    }
+  });
+
+  window.addEventListener("blur", () => {
+    if (isDragging) {
+      isDragging = false;
+      overlay.classList.remove("dragging");
+    }
+  });
+
+  // --- Context Menu (Right Click) ---
+  window.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    if (window.__TAURI__ && window.__TAURI__.core) {
+      window.__TAURI__.core.invoke("show_context_menu");
     }
   });
 
@@ -213,7 +236,7 @@ document.addEventListener("DOMContentLoaded", () => {
           const data = await res.json();
           if (data.syncedLyrics) {
             const parsed = parseLrc(data.syncedLyrics);
-            lyricsCache.set(key, parsed);
+            cacheLyrics(key, parsed);
             return parsed;
           }
         }
@@ -231,7 +254,7 @@ document.addEventListener("DOMContentLoaded", () => {
           const matched = findBestLyricsMatch(items, cleanTitle, cleanArtist, durationMs);
           if (matched && matched.syncedLyrics) {
             const parsed = parseLrc(matched.syncedLyrics);
-            lyricsCache.set(key, parsed);
+            cacheLyrics(key, parsed);
             return parsed;
           }
         }
@@ -246,7 +269,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const matched = findBestLyricsMatch(items, cleanTitle, cleanArtist, durationMs);
             if (matched && matched.syncedLyrics) {
               const parsed = parseLrc(matched.syncedLyrics);
-              lyricsCache.set(key, parsed);
+              cacheLyrics(key, parsed);
               return parsed;
             }
           }
@@ -273,12 +296,12 @@ document.addEventListener("DOMContentLoaded", () => {
   // --- 6. Active Lyric Evaluator ---
   function updateActiveLyric() {
     if (!track.has_media || (!track.title && !track.artist)) {
-      updateLyricDisplay("Waiting for playback...");
+      updateLyricDisplay("Play something to see lyrics");
       return;
     }
 
     if (!currentLyrics || currentLyrics.length === 0) {
-      const banner = track.title && track.artist ? `${track.title} - ${track.artist}` : (track.title || "Waiting for playback...");
+      const banner = track.title && track.artist ? `${track.title} - ${track.artist}` : (track.title || "Play something to see lyrics");
       updateLyricDisplay(banner);
       return;
     }
@@ -319,8 +342,8 @@ document.addEventListener("DOMContentLoaded", () => {
       track.is_playing = false;
       currentTrackKey = "";
       currentLyrics = [];
-      albumArt.src = "";
-      albumArtContainer.classList.add("hidden");
+      albumArt.src = "placeholder.svg";
+      albumArtContainer.classList.remove("hidden");
       updateActiveLyric();
       return;
     }
@@ -332,8 +355,8 @@ document.addEventListener("DOMContentLoaded", () => {
       albumArt.src = currentTrack.album_art_base64;
       albumArtContainer.classList.remove("hidden");
     } else {
-      albumArt.src = "";
-      albumArtContainer.classList.add("hidden");
+      albumArt.src = "placeholder.svg";
+      albumArtContainer.classList.remove("hidden");
     }
 
     const isSongChanged = currentTrackKey !== "" && currentTrackKey !== key;
@@ -447,6 +470,21 @@ document.addEventListener("DOMContentLoaded", () => {
       if (typeof event.payload === "number") {
         lyricOffsetMs = event.payload;
         updateActiveLyric();
+      }
+    });
+
+    window.__TAURI__.event.listen("clear-cache", () => {
+      lyricsCache.clear();
+      if (track.has_media && currentTrackKey) {
+        currentLyrics = [];
+        updateActiveLyric();
+        const capturedKey = currentTrackKey;
+        fetchLyrics(track.title, track.artist, track.album, track.duration_ms).then((lyrics) => {
+          if (currentTrackKey === capturedKey) {
+            currentLyrics = lyrics;
+            updateActiveLyric();
+          }
+        });
       }
     });
 

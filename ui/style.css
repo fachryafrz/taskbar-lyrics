@@ -21,9 +21,12 @@ html, body {
   height: 100%;
   display: flex;
   align-items: center;
-  padding: 0 4px;
-  background: transparent !important;
+  padding: 0 8px;
+  background: transparent;
   cursor: grab;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .overlay-container.locked {
@@ -32,6 +35,10 @@ html, body {
 
 .overlay-container.dragging {
   cursor: grabbing !important;
+  background-color: rgba(15, 23, 42, 0.75) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(8px);
 }
 
 .album-art-slot {

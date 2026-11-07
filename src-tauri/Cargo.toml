@@ -1,8 +1,10 @@
 [package]
-name = "lyrix"
-version = "0.2.0"
-description = "Windows 11 taskbar lyric overlay"
-authors = ["USER"]
+name = "taskbar-lyrics"
+version = "0.1.0"
+description = "Live lyrics on your taskbar"
+authors = ["Fachry Dwi Afriza <fachry.dwi.fd.fda@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/fachryafrz/lyrix"
 edition = "2021"
 
 [build-dependencies]
@@ -11,6 +13,7 @@ tauri-build = { version = "2.0", features = [] }
 [dependencies]
 tauri = { version = "2.0", features = ["tray-icon"] }
 tauri-plugin-shell = "2.0"
+tauri-plugin-autostart = "2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1", features = ["full"] }
@@ -31,3 +34,13 @@ windows = { version = "0.58", features = [
     "Foundation",
     "Foundation_Collections",
 ] }
+
+[profile.dev]
+debug = 1
+
+[profile.release]
+strip = true
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"

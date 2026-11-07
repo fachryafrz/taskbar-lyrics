@@ -67,6 +67,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  window.addEventListener("blur", () => {
+    if (isDragging) {
+      isDragging = false;
+      overlay.classList.remove("dragging");
+    }
+  });
+
   // --- Context Menu (Right Click) ---
   window.addEventListener("contextmenu", (e) => {
     e.preventDefault();
@@ -335,8 +342,8 @@ document.addEventListener("DOMContentLoaded", () => {
       track.is_playing = false;
       currentTrackKey = "";
       currentLyrics = [];
-      albumArt.src = "";
-      albumArtContainer.classList.add("hidden");
+      albumArt.src = "placeholder.svg";
+      albumArtContainer.classList.remove("hidden");
       updateActiveLyric();
       return;
     }
@@ -348,8 +355,8 @@ document.addEventListener("DOMContentLoaded", () => {
       albumArt.src = currentTrack.album_art_base64;
       albumArtContainer.classList.remove("hidden");
     } else {
-      albumArt.src = "";
-      albumArtContainer.classList.add("hidden");
+      albumArt.src = "placeholder.svg";
+      albumArtContainer.classList.remove("hidden");
     }
 
     const isSongChanged = currentTrackKey !== "" && currentTrackKey !== key;

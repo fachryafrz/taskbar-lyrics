@@ -65,6 +65,34 @@
               <span class="field-help">Keep the lyric overlay above other windows.</span>
             </span>
           </label>
+          <label class="check-row" for="run-on-startup">
+            <input id="run-on-startup" name="runOnStartup" type="checkbox">
+            <span>
+              <strong>Run on startup</strong>
+              <span class="field-help">Start Taskbar Lyrics automatically when you log into Windows.</span>
+            </span>
+          </label>
+        </section>
+
+        <section class="settings-section" aria-labelledby="maintenance-heading">
+          <h2 id="maintenance-heading">Troubleshooting</h2>
+          <div class="action-card">
+            <div class="action-item">
+              <div class="action-text">
+                <strong>Reset position</strong>
+                <span class="field-help">Snap the overlay back to its default position on the taskbar.</span>
+              </div>
+              <button id="reset-position-btn" type="button" class="secondary-button">Reset position</button>
+            </div>
+            <div class="action-divider"></div>
+            <div class="action-item">
+              <div class="action-text">
+                <strong>Clear cache</strong>
+                <span class="field-help">Delete saved lyrics and temporary web cache files.</span>
+              </div>
+              <button id="clear-cache-btn" type="button" class="secondary-button">Clear cache</button>
+            </div>
+          </div>
         </section>
       </fieldset>
 

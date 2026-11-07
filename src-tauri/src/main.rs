@@ -15,6 +15,7 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{
     Emitter, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder,
 };
+use tauri_plugin_autostart::ManagerExt;
 
 #[cfg(target_os = "windows")]
 static OVERLAY_HWND: AtomicIsize = AtomicIsize::new(0);
@@ -24,6 +25,7 @@ static ALWAYS_ON_TOP: AtomicBool = AtomicBool::new(true);
 struct TrayMenuChecks {
     wrap: tauri::menu::CheckMenuItem<tauri::Wry>,
     always_on_top: tauri::menu::CheckMenuItem<tauri::Wry>,
+    run_on_startup: tauri::menu::CheckMenuItem<tauri::Wry>,
 }
 
 #[cfg(target_os = "windows")]
@@ -101,8 +103,15 @@ fn open_in_browser(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn get_config(config: tauri::State<Arc<Mutex<AppConfig>>>) -> AppConfig {
-    config.lock().unwrap().clone()
+fn get_config(
+    app: tauri::AppHandle,
+    config: tauri::State<Arc<Mutex<AppConfig>>>,
+) -> AppConfig {
+    let mut cfg = config.lock().unwrap().clone();
+    if let Ok(enabled) = app.autolaunch().is_enabled() {
+        cfg.run_on_startup = enabled;
+    }
+    cfg
 }
 
 fn open_settings_window(app: &tauri::AppHandle, section: Option<&str>) {
@@ -209,6 +218,10 @@ fn show_context_menu(
             .checked(cfg.always_on_top)
             .build(&app)
             .map_err(|e| e.to_string())?;
+        let autostart_item = CheckMenuItemBuilder::with_id("run_on_startup", "Run on Startup")
+            .checked(cfg.run_on_startup)
+            .build(&app)
+            .map_err(|e| e.to_string())?;
         let settings_item = MenuItemBuilder::with_id("settings", "Settings")
             .build(&app)
             .map_err(|e| e.to_string())?;
@@ -216,12 +229,6 @@ fn show_context_menu(
             .build(&app)
             .map_err(|e| e.to_string())?;
         let about_item = MenuItemBuilder::with_id("about", "About")
-            .build(&app)
-            .map_err(|e| e.to_string())?;
-        let reset_item = MenuItemBuilder::with_id("reset", "Reset Position")
-            .build(&app)
-            .map_err(|e| e.to_string())?;
-        let clear_cache_item = MenuItemBuilder::with_id("clear_cache", "Clear Cache")
             .build(&app)
             .map_err(|e| e.to_string())?;
         let exit_item = MenuItemBuilder::with_id("exit", "Exit")
@@ -232,13 +239,11 @@ fn show_context_menu(
             .item(&lock_item)
             .item(&wrap_item)
             .item(&aot_item)
+            .item(&autostart_item)
             .separator()
             .item(&settings_item)
             .item(&changelog_item)
             .item(&about_item)
-            .separator()
-            .item(&reset_item)
-            .item(&clear_cache_item)
             .separator()
             .item(&exit_item)
             .build()
@@ -271,6 +276,40 @@ fn perform_cache_clear() {
             }
         }
     }
+}
+
+fn perform_reset_position(
+    app: &tauri::AppHandle,
+    config_state: &Arc<Mutex<AppConfig>>,
+) -> Result<AppConfig, String> {
+    let mut cfg = config_state
+        .lock()
+        .map_err(|_| "Configuration is unavailable.".to_string())?;
+    cfg.taskbar_offset_x = 0;
+    cfg.taskbar_offset_y = 0;
+    ConfigManager::save(&cfg);
+    if let Some(w) = app.get_webview_window("main") {
+        let bounds = TaskbarManager::widget_bounds(cfg.width, cfg.height);
+        let _ = w.set_position(PhysicalPosition::new(bounds.x, bounds.y));
+        #[cfg(target_os = "windows")]
+        if let Ok(hwnd) = w.hwnd() {
+            let hwnd = windows::Win32::Foundation::HWND(hwnd.0);
+            TaskbarManager::attach_to_taskbar(hwnd);
+            TaskbarManager::ensure_topmost(hwnd, cfg.always_on_top);
+        }
+    }
+    let updated = cfg.clone();
+    drop(cfg);
+    let _ = app.emit("config-updated", updated.clone());
+    Ok(updated)
+}
+
+#[tauri::command]
+fn reset_position(
+    app: tauri::AppHandle,
+    config_state: tauri::State<Arc<Mutex<AppConfig>>>,
+) -> Result<AppConfig, String> {
+    perform_reset_position(&app, &config_state)
 }
 
 #[tauri::command]
@@ -327,6 +366,15 @@ fn apply_settings(
     ConfigManager::apply_settings_update(&mut current, &update)?;
     let updated = current.clone();
     drop(current);
+
+    if let Some(run_on_startup) = update.run_on_startup {
+        let autolaunch = app.autolaunch();
+        if run_on_startup {
+            let _ = autolaunch.enable();
+        } else {
+            let _ = autolaunch.disable();
+        }
+    }
 
     #[cfg(target_os = "windows")]
     ALWAYS_ON_TOP.store(updated.always_on_top, Ordering::Relaxed);
@@ -415,28 +463,28 @@ fn build_tray_menu(
     let aot_item = CheckMenuItemBuilder::with_id("always_on_top", "Always on top")
         .checked(config.always_on_top)
         .build(app)?;
+    let autostart_item = CheckMenuItemBuilder::with_id("run_on_startup", "Run on Startup")
+        .checked(config.run_on_startup)
+        .build(app)?;
     let settings_item = MenuItemBuilder::with_id("settings", "Settings").build(app)?;
     let changelog_item = MenuItemBuilder::with_id("changelog", "Changelog").build(app)?;
     let about_item = MenuItemBuilder::with_id("about", "About").build(app)?;
-    let reset_item = MenuItemBuilder::with_id("reset", "Reset Position").build(app)?;
-    let clear_cache_item = MenuItemBuilder::with_id("clear_cache", "Clear Cache").build(app)?;
     let exit_item = MenuItemBuilder::with_id("exit", "Exit").build(app)?;
 
     let checks = TrayMenuChecks {
         wrap: wrap_item.clone(),
         always_on_top: aot_item.clone(),
+        run_on_startup: autostart_item.clone(),
     };
     let menu = MenuBuilder::new(app)
         .item(&lock_item)
         .item(&wrap_item)
         .item(&aot_item)
+        .item(&autostart_item)
         .separator()
         .item(&settings_item)
         .item(&changelog_item)
         .item(&about_item)
-        .separator()
-        .item(&reset_item)
-        .item(&clear_cache_item)
         .separator()
         .item(&exit_item)
         .build()?;
@@ -452,6 +500,7 @@ fn sync_tray_menu_checks(
         if let Some(checks) = checks.as_ref() {
             let _ = checks.wrap.set_checked(config.wrap_long_lyrics);
             let _ = checks.always_on_top.set_checked(config.always_on_top);
+            let _ = checks.run_on_startup.set_checked(config.run_on_startup);
         }
     }
 }
@@ -507,6 +556,17 @@ fn handle_menu_action(
             }
             let _ = app.emit("config-updated", cfg.clone());
         }
+        "run_on_startup" => {
+            cfg.run_on_startup = !cfg.run_on_startup;
+            let autolaunch = app.autolaunch();
+            if cfg.run_on_startup {
+                let _ = autolaunch.enable();
+            } else {
+                let _ = autolaunch.disable();
+            }
+            ConfigManager::save(&cfg);
+            let _ = app.emit("config-updated", cfg.clone());
+        }
         "reset" => {
             cfg.taskbar_offset_x = 0;
             cfg.taskbar_offset_y = 0;
@@ -554,6 +614,10 @@ fn main() {
         .manage(Arc::clone(&tray_menu_checks))
         .manage(settings_window_creation)
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![]),
+        ))
         .invoke_handler(tauri::generate_handler![
             get_config,
             get_app_info,
@@ -564,6 +628,7 @@ fn main() {
             move_window_by,
             save_window_position,
             show_context_menu,
+            reset_position,
             clear_cache
         ])
         .on_window_event(|window, event| {
@@ -627,6 +692,12 @@ fn main() {
             }
 
             let _ = window.show();
+
+            // Synchronize autostart on application startup
+            let autolaunch = app.autolaunch();
+            if config_for_setup.run_on_startup {
+                let _ = autolaunch.enable();
+            }
 
             // Setup System Tray
             let (tray_menu, check_items) = build_tray_menu(app.handle(), &config_for_setup)?;

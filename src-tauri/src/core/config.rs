@@ -15,6 +15,8 @@ pub struct AppConfig {
     pub wrap_long_lyrics: bool,
     pub visible: bool,
     pub always_on_top: bool,
+    #[serde(default)]
+    pub run_on_startup: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -26,6 +28,7 @@ pub struct SettingsUpdate {
     pub font_size: Option<i32>,
     pub wrap_long_lyrics: Option<bool>,
     pub always_on_top: Option<bool>,
+    pub run_on_startup: Option<bool>,
 }
 
 impl SettingsUpdate {
@@ -58,6 +61,9 @@ impl SettingsUpdate {
         if let Some(always_on_top) = self.always_on_top {
             config.always_on_top = always_on_top;
         }
+        if let Some(run_on_startup) = self.run_on_startup {
+            config.run_on_startup = run_on_startup;
+        }
 
         Ok(())
     }
@@ -76,6 +82,7 @@ impl Default for AppConfig {
             wrap_long_lyrics: true,
             visible: true,
             always_on_top: true,
+            run_on_startup: false,
         }
     }
 }
@@ -250,5 +257,41 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(config, before);
+    }
+
+    #[test]
+    fn config_deserialization_defaults_run_on_startup_when_omitted() {
+        let legacy_json = r#"{
+            "width": 500,
+            "height": 50,
+            "taskbarOffsetX": 10,
+            "taskbarOffsetY": 5,
+            "lyricOffsetMilliseconds": 200,
+            "fontSize": 14,
+            "locked": true,
+            "wrapLongLyrics": false,
+            "visible": true,
+            "alwaysOnTop": false
+        }"#;
+
+        let config: AppConfig = serde_json::from_str(legacy_json).unwrap();
+        assert!(!config.run_on_startup);
+        assert_eq!(config.width, 500);
+        assert_eq!(config.height, 50);
+    }
+
+    #[test]
+    fn settings_update_can_toggle_run_on_startup() {
+        let mut config = AppConfig::default();
+        assert!(!config.run_on_startup);
+
+        SettingsUpdate {
+            run_on_startup: Some(true),
+            ..SettingsUpdate::default()
+        }
+        .apply_to(&mut config)
+        .unwrap();
+
+        assert!(config.run_on_startup);
     }
 }

@@ -13,6 +13,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     lyricOffsetMilliseconds: { input: document.getElementById("lyric-offset"), error: document.getElementById("lyric-offset-error") },
     wrapLongLyrics: { input: document.getElementById("wrap-long-lyrics"), error: null },
     alwaysOnTop: { input: document.getElementById("always-on-top"), error: null },
+    runOnStartup: { input: document.getElementById("run-on-startup"), error: null },
   };
   const fieldNames = Object.keys(fields);
   const numericBounds = {
@@ -67,11 +68,12 @@ document.addEventListener("DOMContentLoaded", async () => {
       lyricOffsetMilliseconds: config?.lyricOffsetMilliseconds,
       wrapLongLyrics: config?.wrapLongLyrics,
       alwaysOnTop: config?.alwaysOnTop,
+      runOnStartup: config?.runOnStartup ?? false,
     };
 
     for (const name of fieldNames) {
       const value = normalized[name];
-      if (typeof value !== (name === "wrapLongLyrics" || name === "alwaysOnTop" ? "boolean" : "number")) {
+      if (typeof value !== (name === "wrapLongLyrics" || name === "alwaysOnTop" || name === "runOnStartup" ? "boolean" : "number")) {
         throw new Error("Taskbar Lyrics returned incomplete settings.");
       }
       if (typeof value === "number" && !Number.isInteger(value)) {
@@ -242,6 +244,38 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   retryButton.addEventListener("click", loadConfig);
+
+  // Troubleshooting Actions
+  const resetPositionBtn = document.getElementById("reset-position-btn");
+  const clearCacheBtn = document.getElementById("clear-cache-btn");
+
+  if (resetPositionBtn) {
+    resetPositionBtn.addEventListener("click", async () => {
+      if (!ready || saving) return;
+      setError("");
+      setStatus("Resetting position…");
+      try {
+        await window.__TAURI__.core.invoke("reset_position");
+        setStatus("Overlay position reset to default.");
+      } catch (error) {
+        setError(`Failed to reset position: ${errorText(error)}`);
+      }
+    });
+  }
+
+  if (clearCacheBtn) {
+    clearCacheBtn.addEventListener("click", async () => {
+      if (!ready || saving) return;
+      setError("");
+      setStatus("Clearing cache…");
+      try {
+        await window.__TAURI__.core.invoke("clear_cache");
+        setStatus("Cache cleared successfully.");
+      } catch (error) {
+        setError(`Failed to clear cache: ${errorText(error)}`);
+      }
+    });
+  }
 
   // About & Release Notes Modal Logic
   const appVersionEl = document.getElementById("app-version");

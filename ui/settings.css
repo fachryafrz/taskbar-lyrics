@@ -75,6 +75,7 @@ input {
   display: flex;
   flex: 1;
   flex-direction: column;
+  gap: 12px;
 }
 
 #settings-fields {
@@ -260,6 +261,76 @@ input {
 
 #settings-fields:disabled {
   opacity: 0.65;
+}
+
+/* Troubleshooting / Action Section */
+.action-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--field-border);
+  border-radius: 6px;
+  background: var(--field-background);
+}
+
+.action-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.action-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.action-text strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.action-divider {
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 5px 14px;
+  border: 1px solid var(--field-border);
+  border-radius: 4px;
+  background: var(--field-background);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.secondary-button:hover:not(:disabled) {
+  border-color: var(--field-border-hover);
+  background: var(--btn-hover-bg);
+}
+
+.secondary-button:active:not(:disabled) {
+  background: var(--disabled-background);
+}
+
+.secondary-button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.secondary-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* About Section */

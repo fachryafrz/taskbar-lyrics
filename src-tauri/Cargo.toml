@@ -2,7 +2,9 @@
 name = "taskbar-lyrics"
 version = "0.1.0"
 description = "Live lyrics on your taskbar"
-authors = ["USER"]
+authors = ["Fachry Dwi Afriza <fachry.dwi.fd.fda@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/fachryafrz/lyrix"
 edition = "2021"
 
 [build-dependencies]

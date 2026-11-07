@@ -72,10 +72,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     for (const name of fieldNames) {
       const value = normalized[name];
       if (typeof value !== (name === "wrapLongLyrics" || name === "alwaysOnTop" ? "boolean" : "number")) {
-        throw new Error("Lyrix returned incomplete settings.");
+        throw new Error("Taskbar Lyrics returned incomplete settings.");
       }
       if (typeof value === "number" && !Number.isInteger(value)) {
-        throw new Error("Lyrix returned invalid numeric settings.");
+        throw new Error("Taskbar Lyrics returned invalid numeric settings.");
       }
     }
     return normalized;
@@ -246,7 +246,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const tauri = window.__TAURI__;
   if (!tauri?.core?.invoke) {
     setStatus("");
-    setError("Lyrix Settings needs the desktop app runtime.");
+    setError("Taskbar Lyrics Settings needs the desktop app runtime.");
     return;
   }
 

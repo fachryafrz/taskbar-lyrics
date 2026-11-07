@@ -1,4 +1,4 @@
-// Lyrix Overlay Client Logic (High Precision Sync & LRCLIB Matching)
+// Taskbar Lyrics Overlay Client Logic (High Precision Sync & LRCLIB Matching)
 document.addEventListener("DOMContentLoaded", () => {
   const overlay = document.getElementById("overlay");
   const albumArtContainer = document.getElementById("album-art-container");

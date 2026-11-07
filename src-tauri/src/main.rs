@@ -65,7 +65,7 @@ fn open_settings_window(app: &tauri::AppHandle) {
                 "settings",
                 WebviewUrl::App("settings.html".into()),
             )
-            .title("Lyrix Settings")
+            .title("Taskbar Lyrics Settings")
             .inner_size(520.0, 520.0)
             .decorations(true)
             .transparent(false)
@@ -187,25 +187,33 @@ fn show_context_menu(
     Ok(())
 }
 
-#[tauri::command]
-fn clear_cache(app: tauri::AppHandle) -> Result<(), String> {
+fn perform_cache_clear() {
     if let Some(base) = dirs::data_local_dir() {
-        // 1. Clear lyrics cache
-        let cache_dir = base.join("Lyrix").join("lyrics_cache");
-        if cache_dir.exists() {
-            let _ = std::fs::remove_dir_all(&cache_dir);
-            let _ = std::fs::create_dir_all(&cache_dir);
+        // 1. Clear lyrics cache (new and legacy)
+        for app_dir_name in &["TaskbarLyrics", "Lyrix"] {
+            let cache_dir = base.join(app_dir_name).join("lyrics_cache");
+            if cache_dir.exists() {
+                let _ = std::fs::remove_dir_all(&cache_dir);
+                let _ = std::fs::create_dir_all(&cache_dir);
+            }
         }
 
-        // 2. Clear WebView2 browser/EBWebView cache
-        let webview_cache = base.join("com.lyrix.taskbar").join("EBWebView");
-        for sub in &["Default/Cache", "Default/Code Cache", "Default/GPUCache"] {
-            let path = webview_cache.join(sub);
-            if path.exists() {
-                let _ = std::fs::remove_dir_all(&path);
+        // 2. Clear WebView2 browser/EBWebView cache (new and legacy)
+        for identifier in &["com.fachryafrz.taskbarlyrics", "com.lyrix.taskbar"] {
+            let webview_cache = base.join(identifier).join("EBWebView");
+            for sub in &["Default/Cache", "Default/Code Cache", "Default/GPUCache"] {
+                let path = webview_cache.join(sub);
+                if path.exists() {
+                    let _ = std::fs::remove_dir_all(&path);
+                }
             }
         }
     }
+}
+
+#[tauri::command]
+fn clear_cache(app: tauri::AppHandle) -> Result<(), String> {
+    perform_cache_clear();
     let _ = app.emit("clear-cache", ());
     Ok(())
 }
@@ -460,23 +468,7 @@ fn handle_menu_action(
             }
         }
         "clear_cache" => {
-            if let Some(base) = dirs::data_local_dir() {
-                // 1. Clear lyrics cache
-                let cache_dir = base.join("Lyrix").join("lyrics_cache");
-                if cache_dir.exists() {
-                    let _ = std::fs::remove_dir_all(&cache_dir);
-                    let _ = std::fs::create_dir_all(&cache_dir);
-                }
-
-                // 2. Clear WebView2 browser/EBWebView cache
-                let webview_cache = base.join("com.lyrix.taskbar").join("EBWebView");
-                for sub in &["Default/Cache", "Default/Code Cache", "Default/GPUCache"] {
-                    let path = webview_cache.join(sub);
-                    if path.exists() {
-                        let _ = std::fs::remove_dir_all(&path);
-                    }
-                }
-            }
+            perform_cache_clear();
             let _ = app.emit("clear-cache", ());
         }
         "exit" => {
@@ -600,7 +592,7 @@ fn main() {
 
             let mut tray_builder = TrayIconBuilder::new()
                 .menu(&tray_menu)
-                .tooltip("Lyrix - Taskbar Lyrics");
+                .tooltip("Taskbar Lyrics");
 
             if let Some(icon) = app.default_window_icon() {
                 tray_builder = tray_builder.icon(icon.clone());

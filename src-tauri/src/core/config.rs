@@ -85,8 +85,8 @@ pub struct ConfigManager;
 impl ConfigManager {
     pub fn config_path() -> Option<PathBuf> {
         let base = dirs::data_local_dir()?;
-        let new_path = base.join("Lyrix").join("config.json");
-        let old_path = base.join("TaskbarLyrics").join("config.json");
+        let new_path = base.join("TaskbarLyrics").join("config.json");
+        let old_path = base.join("Lyrix").join("config.json");
 
         if !new_path.exists() && old_path.exists() {
             if let Some(parent) = new_path.parent() {
@@ -142,7 +142,7 @@ impl ConfigManager {
             if Self::save(config) {
                 Ok(())
             } else {
-                Err("Could not save settings to the Lyrix config file.".into())
+                Err("Could not save settings to the Taskbar Lyrics config file.".into())
             }
         })
     }

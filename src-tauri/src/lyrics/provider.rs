@@ -27,7 +27,7 @@ impl LyricsProvider {
     pub fn new() -> Self {
         Self {
             client: reqwest::Client::builder()
-                .user_agent("Lyrix/2.0 (Windows desktop overlay)")
+                .user_agent("TaskbarLyrics/2.0 (Windows desktop overlay)")
                 .timeout(std::time::Duration::from_secs(5))
                 .build()
                 .unwrap_or_default(),
@@ -37,8 +37,19 @@ impl LyricsProvider {
 
     fn cache_dir() -> Option<PathBuf> {
         let base = dirs::data_local_dir()?;
-        let dir = base.join("Lyrix").join("lyrics_cache");
-        let _ = fs::create_dir_all(&dir);
+        let dir = base.join("TaskbarLyrics").join("lyrics_cache");
+        let old_dir = base.join("Lyrix").join("lyrics_cache");
+        if !dir.exists() && old_dir.exists() {
+            let _ = fs::create_dir_all(&dir);
+            if let Ok(entries) = fs::read_dir(&old_dir) {
+                for entry in entries.flatten() {
+                    let dest = dir.join(entry.file_name());
+                    let _ = fs::copy(entry.path(), dest);
+                }
+            }
+        } else {
+            let _ = fs::create_dir_all(&dir);
+        }
         Some(dir)
     }
 
